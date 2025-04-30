@@ -1,203 +1,235 @@
 import streamlit as st
+from PIL import Image
+import os
 import pandas as pd
-import numpy as np
-import time
-import folium
-from streamlit_folium import folium_static
-from datetime import datetime, timedelta
-import random
 
-# Set up the page
-st.set_page_config(page_title="Way4U Pro Tipper Monitoring", layout="wide")
-st.title("🚛 Tipper Truck Monitoring System")
-st.subheader("Way4U Pro Configuration Demo")
+# Initialize session state for tire data
+if 'tires' not in st.session_state:
+    st.session_state.tires = pd.DataFrame(columns=[
+        'Tire Number', 
+        'Position', 
+        'Image Path', 
+        'Condition (%)', 
+        'Last Checked'
+    ])
 
-# Sidebar for configuration
-with st.sidebar:
-    st.header("Configuration")
-    num_trucks = st.slider("Number of Tipper Trucks", 1, 10, 5)
-    alert_threshold = st.number_input("Stoppage Alert Threshold (minutes)", 10)
-    geofence_radius = st.number_input("Geofence Radius (meters)", 100)
-    simulate_data = st.button("Simulate Live Data")
-    
-    st.markdown("---")
-    st.markdown("### Way4U Pro Settings")
-    enable_trip_count = st.checkbox("Enable Automatic Trip Counting", True)
-    enable_breakdown_alerts = st.checkbox("Enable Breakdown Alerts", True)
-    enable_maintenance = st.checkbox("Enable Maintenance Alerts", True)
+# Create directories if they don't exist
+os.makedirs("tire_images", exist_ok=True)
 
-# Generate sample truck data
-def generate_truck_data(num_trucks):
-    trucks = []
-    for i in range(1, num_trucks + 1):
-        status = random.choice(["En Route to Mine", "Loading at Plant", "Unloading at Mine", "Returning to Plant"])
-        if status == "En Route to Mine":
-            lat = random.uniform(12.85, 12.95)
-            lng = random.uniform(77.55, 77.65)
-        elif status == "Returning to Plant":
-            lat = random.uniform(12.75, 12.85)
-            lng = random.uniform(77.45, 77.55)
-        elif status == "Loading at Plant":
-            lat = 12.80  # Plant location
-            lng = 77.50
-        else:
-            lat = 12.90  # Mine location
-            lng = 77.60
-            
-        trucks.append({
-            "Truck ID": f"TIP-{i:03d}",
-            "Status": status,
-            "Last Update": (datetime.now() - timedelta(minutes=random.randint(0, 30))).strftime("%H:%M:%S"),
-            "Current Trip": random.randint(1, 8),
-            "Total Trips Today": random.randint(3, 12),
-            "Latitude": lat,
-            "Longitude": lng,
-            "Speed": random.randint(0, 60),
-            "Engine Status": random.choice(["Normal", "Warning", "Critical"]),
-            "Stoppage Duration (min)": random.randint(0, 45) if status not in ["Loading at Plant", "Unloading at Mine"] else 0
-        })
-    return pd.DataFrame(trucks)
+# App title
+st.title("Tipper Tire Management System")
+st.subheader("Track and manage your tipper's 10 tires")
 
-# Main dashboard
-col1, col2 = st.columns([3, 1])
+# Sidebar for navigation
+menu = st.sidebar.selectbox(
+    "Menu",
+    ["Add/Update Tire", "View All Tires", "Tire Dashboard", "Delete Tire"]
+)
 
-with col1:
-    st.header("Real-Time Monitoring Dashboard")
+if menu == "Add/Update Tire":
+    st.header("Add or Update Tire Information")
     
-    # Generate and display truck data
-    truck_data = generate_truck_data(num_trucks)
-    
-    # Create a map
-    m = folium.Map(location=[12.85, 77.55], zoom_start=11)
-    
-    # Add plant and mine geofences
-    folium.Circle(
-        location=[12.80, 77.50],  # Plant
-        radius=geofence_radius,
-        color='green',
-        fill=True,
-        fill_color='green',
-        popup='Plant Loading Area'
-    ).add_to(m)
-    
-    folium.Circle(
-        location=[12.90, 77.60],  # Mine
-        radius=geofence_radius,
-        color='red',
-        fill=True,
-        fill_color='red',
-        popup='Mine Unloading Area'
-    ).add_to(m)
-    
-    # Add truck markers
-    for idx, row in truck_data.iterrows():
-        color = 'blue'
-        if row['Engine Status'] == 'Warning':
-            color = 'orange'
-        elif row['Engine Status'] == 'Critical':
-            color = 'red'
-            
-        folium.Marker(
-            location=[row['Latitude'], row['Longitude']],
-            popup=f"Truck {row['Truck ID']} - {row['Status']}",
-            icon=folium.Icon(color=color, icon='truck', prefix='fa')
-        ).add_to(m)
-    
-    folium_static(m, width=800, height=400)
-    
-    # Display truck data table
-    st.dataframe(truck_data.style.apply(lambda x: ['background: #ffcccc' if x['Engine Status'] == 'Critical' else 
-                                                 ('background: #ffe6cc' if x['Engine Status'] == 'Warning' else '') 
-                                                 for i in x], axis=1))
-
-with col2:
-    st.header("Alerts & Notifications")
-    
-    # Breakdown alerts
-    if enable_breakdown_alerts:
-        breakdowns = truck_data[(truck_data['Stoppage Duration (min)'] > alert_threshold) & 
-                              (~truck_data['Status'].isin(['Loading at Plant', 'Unloading at Mine']))]
+    # Form for tire details
+    with st.form("tire_form"):
+        col1, col2 = st.columns(2)
         
-        if not breakdowns.empty:
-            st.error("🚨 Breakdown Alerts")
-            for idx, row in breakdowns.iterrows():
-                st.error(f"Truck {row['Truck ID']} stopped for {row['Stoppage Duration (min)']} minutes at {row['Status']}")
-        else:
-            st.success("No breakdown alerts")
-    
-    # Maintenance alerts
-    if enable_maintenance:
-        st.markdown("---")
-        st.subheader("Maintenance Alerts")
-        for idx, row in truck_data.iterrows():
-            if row['Total Trips Today'] > 8:
-                st.warning(f"Truck {row['Truck ID']} has completed {row['Total Trips Today']} trips today - consider maintenance soon")
-    
-    # Trip counting summary
-    if enable_trip_count:
-        st.markdown("---")
-        st.subheader("Trip Counting")
-        st.write(f"Average trips per truck: {truck_data['Total Trips Today'].mean():.1f}")
-        st.bar_chart(truck_data.set_index('Truck ID')['Total Trips Today'])
-
-# Simulation controls
-if simulate_data:
-    progress_bar = st.progress(0)
-    status_text = st.empty()
-    
-    for i in range(100):
-        # Update the progress bar
-        progress_bar.progress(i + 1)
-        
-        # Generate new data
-        new_data = generate_truck_data(num_trucks)
-        
-        # Update the data display
         with col1:
-            st.dataframe(new_data.style.apply(lambda x: ['background: #ffcccc' if x['Engine Status'] == 'Critical' else 
-                                                       ('background: #ffe6cc' if x['Engine Status'] == 'Warning' else '') 
-                                                       for i in x], axis=1))
-        
-        # Update alerts
+            tire_number = st.selectbox(
+                "Tire Number", 
+                options=[f"Tire-{i}" for i in range(1, 11)],
+                index=0
+            )
+            
+            position_options = [
+                "Front Left", "Front Right",
+                "Middle Left 1", "Middle Right 1",
+                "Middle Left 2", "Middle Right 2",
+                "Rear Left 1", "Rear Right 1",
+                "Rear Left 2", "Rear Right 2"
+            ]
+            position = st.selectbox(
+                "Position", 
+                options=position_options,
+                index=0
+            )
+            
         with col2:
-            if enable_breakdown_alerts:
-                breakdowns = new_data[(new_data['Stoppage Duration (min)'] > alert_threshold) & 
-                                    (~new_data['Status'].isin(['Loading at Plant', 'Unloading at Mine']))]
-                
-                if not breakdowns.empty:
-                    for idx, row in breakdowns.iterrows():
-                        st.error(f"Truck {row['Truck ID']} stopped for {row['Stoppage Duration (min)']} minutes at {row['Status']}")
+            condition = st.slider("Condition (%)", 0, 100, 80)
+            image_file = st.file_uploader("Upload Tire Image", type=["jpg", "png", "jpeg"])
         
-        status_text.text(f"Simulating data... {i+1}/100")
-        time.sleep(0.1)
-    
-    st.success("Simulation complete!")
+        submitted = st.form_submit_button("Save Tire")
+        
+        if submitted:
+            # Handle image upload
+            image_path = None
+            if image_file is not None:
+                image_path = f"tire_images/{tire_number}.{image_file.name.split('.')[-1]}"
+                with open(image_path, "wb") as f:
+                    f.write(image_file.getbuffer())
+            
+            # Update or add tire data
+            if tire_number in st.session_state.tires['Tire Number'].values:
+                # Update existing tire
+                idx = st.session_state.tires[st.session_state.tires['Tire Number'] == tire_number].index[0]
+                st.session_state.tires.at[idx, 'Position'] = position
+                st.session_state.tires.at[idx, 'Condition (%)'] = condition
+                if image_path:
+                    st.session_state.tires.at[idx, 'Image Path'] = image_path
+                st.session_state.tires.at[idx, 'Last Checked'] = pd.Timestamp.now()
+                st.success(f"Tire {tire_number} updated successfully!")
+            else:
+                # Add new tire
+                new_tire = {
+                    'Tire Number': tire_number,
+                    'Position': position,
+                    'Image Path': image_path,
+                    'Condition (%)': condition,
+                    'Last Checked': pd.Timestamp.now()
+                }
+                st.session_state.tires = st.session_state.tires.append(new_tire, ignore_index=True)
+                st.success(f"Tire {tire_number} added successfully!")
 
-# Configuration guide
-st.markdown("---")
-st.header("Way4U Pro Configuration Guide")
-with st.expander("Step-by-Step Setup Instructions"):
-    st.markdown("""
-    ### 1. Geofence Setup for Trip Counting
-    - Create geofences around plant (loading) and mine (unloading) areas
-    - Set radius to {} meters
-    - Enable automatic trip counting when vehicles enter/exit these zones
+elif menu == "View All Tires":
+    st.header("All Tires Information")
     
-    ### 2. Breakdown Alert Configuration
-    - Set stoppage alert threshold to {} minutes
-    - Configure alerts for unexpected stops outside geofenced areas
-    - Enable engine diagnostics if OBD-II is connected
-    
-    ### 3. Real-Time Monitoring
-    - View live positions on the map
-    - Monitor trip counts and durations
-    - Track engine status indicators
-    
-    ### 4. Maintenance Scheduling
-    - Set up alerts based on trip counts or engine hours
-    - Monitor for abnormal fuel consumption patterns
-    """.format(geofence_radius, alert_threshold))
+    if st.session_state.tires.empty:
+        st.warning("No tires added yet!")
+    else:
+        # Display all tires in a table
+        st.dataframe(st.session_state.tires)
+        
+        # Show details for selected tire
+        selected_tire = st.selectbox(
+            "Select a tire to view details",
+            options=st.session_state.tires['Tire Number'].unique()
+        )
+        
+        tire_data = st.session_state.tires[st.session_state.tires['Tire Number'] == selected_tire].iloc[0]
+        
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            st.subheader(f"Tire: {tire_data['Tire Number']}")
+            st.write(f"**Position:** {tire_data['Position']}")
+            st.write(f"**Condition:** {tire_data['Condition (%)']}% remaining")
+            st.write(f"**Last Checked:** {tire_data['Last Checked']}")
+            
+        with col2:
+            if tire_data['Image Path'] and os.path.exists(tire_data['Image Path']):
+                try:
+                    image = Image.open(tire_data['Image Path'])
+                    st.image(image, caption=f"{selected_tire} Image", width=300)
+                except:
+                    st.warning("Could not load image")
+            else:
+                st.warning("No image available for this tire")
 
-# Add some Way4U Pro branding
-st.markdown("---")
-st.markdown("*This demo simulates the functionality of Way4U Pro for tipper truck monitoring*")
+elif menu == "Tire Dashboard":
+    st.header("Tire Condition Dashboard")
+    
+    if st.session_state.tires.empty:
+        st.warning("No tires added yet!")
+    else:
+        # Display condition summary
+        st.subheader("Condition Summary")
+        st.bar_chart(st.session_state.tires.set_index('Tire Number')['Condition (%)'])
+        
+        # Show tires that need attention (condition < 30%)
+        critical_tires = st.session_state.tires[st.session_state.tires['Condition (%)'] < 30]
+        if not critical_tires.empty:
+            st.warning("The following tires need immediate attention:")
+            st.dataframe(critical_tires[['Tire Number', 'Position', 'Condition (%)']])
+        else:
+            st.success("All tires are in good condition!")
+        
+        # Show position map
+        st.subheader("Tire Position Map")
+        
+        # Create a simple visual representation of tire positions
+        position_map = """
+        <style>
+            .tire-map {
+                display: grid;
+                grid-template-columns: repeat(3, 1fr);
+                gap: 10px;
+                margin: 20px 0;
+            }
+            .tire-position {
+                border: 1px solid #ddd;
+                padding: 10px;
+                text-align: center;
+                border-radius: 5px;
+            }
+            .front { grid-column: 2; }
+        </style>
+        
+        <div class="tire-map">
+            <div class="tire-position front">Front Left<br>{FL}</div>
+            <div class="tire-position front">Front Right<br>{FR}</div>
+            
+            <div class="tire-position">Middle Left 1<br>{ML1}</div>
+            <div class="tire-position">Middle Right 1<br>{MR1}</div>
+            
+            <div class="tire-position">Middle Left 2<br>{ML2}</div>
+            <div class="tire-position">Middle Right 2<br>{MR2}</div>
+            
+            <div class="tire-position">Rear Left 1<br>{RL1}</div>
+            <div class="tire-position">Rear Right 1<br>{RR1}</div>
+            
+            <div class="tire-position">Rear Left 2<br>{RL2}</div>
+            <div class="tire-position">Rear Right 2<br>{RR2}</div>
+        </div>
+        """
+        
+        # Get tire numbers for each position
+        position_data = {}
+        for pos in [
+            "Front Left", "Front Right",
+            "Middle Left 1", "Middle Right 1",
+            "Middle Left 2", "Middle Right 2",
+            "Rear Left 1", "Rear Right 1",
+            "Rear Left 2", "Rear Right 2"
+        ]:
+            tire = st.session_state.tires[st.session_state.tires['Position'] == pos]
+            if not tire.empty:
+                position_data[pos.replace(" ", "")] = f"{tire.iloc[0]['Tire Number']} ({tire.iloc[0]['Condition (%)']}%)"
+            else:
+                position_data[pos.replace(" ", "")] = "Empty"
+        
+        # Fill the position map with data
+        filled_map = position_map.format(**position_data)
+        st.markdown(filled_map, unsafe_allow_html=True)
+
+elif menu == "Delete Tire":
+    st.header("Delete Tire Record")
+    
+    if st.session_state.tires.empty:
+        st.warning("No tires added yet!")
+    else:
+        tire_to_delete = st.selectbox(
+            "Select tire to delete",
+            options=st.session_state.tires['Tire Number'].unique()
+        )
+        
+        if st.button("Delete Tire"):
+            # Get image path before deletion
+            image_path = st.session_state.tires[
+                st.session_state.tires['Tire Number'] == tire_to_delete
+            ]['Image Path'].values[0]
+            
+            # Delete the record
+            st.session_state.tires = st.session_state.tires[
+                st.session_state.tires['Tire Number'] != tire_to_delete
+            ]
+            
+            # Delete the associated image
+            if image_path and os.path.exists(image_path):
+                try:
+                    os.remove(image_path)
+                except:
+                    st.warning("Could not delete tire image file")
+            
+            st.success(f"Tire {tire_to_delete} deleted successfully!")
+
+# Add some padding at the bottom
+st.markdown("<br><br>", unsafe_allow_html=True)
