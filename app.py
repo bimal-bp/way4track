@@ -20,17 +20,35 @@ if 'tires' not in st.session_state:
 # Create directories if they don't exist
 os.makedirs("tire_images", exist_ok=True)
 
+# Tipper details with registration numbers
+tipper_details = {
+    "TIPPER-1": "JHOSB4166 (WATER TANKER)",
+    "TIPPER-2": "AP39UQ-0095",
+    "TIPPER-3": "AP39UQ-0097 (ROC)",
+    "TIPPER-4": "AP39UW-9880 (ROCK BODY)",
+    "TIPPER-5": "AP39UW-9881 (ROCK BODY)",
+    "TIPPER-6": "AP39UY-4651 (ROCK BODY)",
+    "TIPPER-7": "AP39UY-4652 (ROCK BODY)",
+    "TIPPER-8": "AP39WC-0926 (ROCK BODY)",
+    "TIPPER-9": "AP39WC-0927 (ROCK BODY)"
+}
+
 # App title
 st.title("Tipper Tire Management System")
-st.subheader("Track and manage tires across your fleet of 9 tippers")
+st.subheader("Track and manage tires across your fleet of tippers")
 
 # Sidebar for navigation
 menu = st.sidebar.selectbox(
     "Menu",
-    ["Add/Update Tire", "View All Tires", "Tire Dashboard", "Delete Tire"]
+    ["Add/Update Tire", "View All Tires", "Tire Dashboard", "Delete Tire", "Tipper Info"]
 )
 
-if menu == "Add/Update Tire":
+if menu == "Tipper Info":
+    st.header("Tipper Information")
+    tipper_info_df = pd.DataFrame.from_dict(tipper_details, orient='index', columns=['Registration'])
+    st.dataframe(tipper_info_df)
+
+elif menu == "Add/Update Tire":
     st.header("Add or Update Tire Information")
     
     # Form for tire details
@@ -40,7 +58,8 @@ if menu == "Add/Update Tire":
         with col1:
             tipper_id = st.selectbox(
                 "Tipper ID", 
-                options=[f"Tipper-{i}" for i in range(1, 10)],
+                options=list(tipper_details.keys()),
+                format_func=lambda x: f"{x} - {tipper_details[x]}",
                 index=0
             )
             
@@ -105,19 +124,20 @@ if menu == "Add/Update Tire":
                 st.session_state.tires.at[idx, 'Last Checked'] = pd.Timestamp.now()
                 st.success(f"Tire {tire_number} on {tipper_id} updated successfully!")
             else:
-                # Add new tire
-                new_tire = {
+                # Add new tire - using pd.concat instead of append
+                new_tire = pd.DataFrame([{
                     'Tipper ID': tipper_id,
                     'Tire Number': tire_number,
                     'Position': position,
-                    'Image Paths': image_paths,
+                    'Image Paths': [image_paths],  # Store as list of paths
                     'Condition (%)': condition,
                     'Date Installed': date_installed,
                     'Starting KMR': starting_kmr,
                     'Current KMR': current_kmr,
                     'Last Checked': pd.Timestamp.now()
-                }
-                st.session_state.tires = st.session_state.tires.append(new_tire, ignore_index=True)
+                }])
+                
+                st.session_state.tires = pd.concat([st.session_state.tires, new_tire], ignore_index=True)
                 st.success(f"Tire {tire_number} added to {tipper_id} successfully!")
 
 elif menu == "View All Tires":
@@ -129,7 +149,8 @@ elif menu == "View All Tires":
         # Filter by tipper if desired
         selected_tipper = st.selectbox(
             "Filter by Tipper (or view all)",
-            options=["All"] + [f"Tipper-{i}" for i in range(1, 10)]
+            options=["All"] + list(tipper_details.keys()),
+            format_func=lambda x: f"{x} - {tipper_details[x]}" if x != "All" else "All"
         )
         
         if selected_tipper != "All":
@@ -159,7 +180,7 @@ elif menu == "View All Tires":
             col1, col2 = st.columns(2)
             
             with col1:
-                st.subheader(f"Tipper: {tipper_id}")
+                st.subheader(f"Tipper: {tipper_id} - {tipper_details[tipper_id]}")
                 st.subheader(f"Tire: {tire_num}")
                 st.write(f"**Position:** {tire_data['Position']}")
                 st.write(f"**Condition:** {tire_data['Condition (%)']}% remaining")
@@ -170,10 +191,10 @@ elif menu == "View All Tires":
                 st.write(f"**Last Checked:** {tire_data['Last Checked']}")
                 
             with col2:
-                if tire_data['Image Paths']:
+                if tire_data['Image Paths'] and len(tire_data['Image Paths']) > 0:
                     st.subheader("Tire Images")
                     for img_path in tire_data['Image Paths']:
-                        if os.path.exists(img_path):
+                        if img_path and os.path.exists(img_path):
                             try:
                                 image = Image.open(img_path)
                                 st.image(image, caption=f"{tipper_id} - {tire_num}", width=300)
@@ -193,7 +214,8 @@ elif menu == "Tire Dashboard":
         # Filter by tipper if desired
         selected_tipper = st.selectbox(
             "View Dashboard for Tipper (or view all)",
-            options=["All"] + [f"Tipper-{i}" for i in range(1, 10)]
+            options=["All"] + list(tipper_details.keys()),
+            format_func=lambda x: f"{x} - {tipper_details[x]}" if x != "All" else "All"
         )
         
         if selected_tipper != "All":
@@ -222,7 +244,7 @@ elif menu == "Tire Dashboard":
         
         # Show position map for selected tipper
         if selected_tipper != "All":
-            st.subheader(f"Tire Position Map for {selected_tipper}")
+            st.subheader(f"Tire Position Map for {selected_tipper} - {tipper_details[selected_tipper]}")
             
             # Create a simple visual representation of tire positions
             position_map = """
@@ -293,7 +315,8 @@ elif menu == "Delete Tire":
         # Select tipper first
         selected_tipper = st.selectbox(
             "Select Tipper",
-            options=[f"Tipper-{i}" for i in range(1, 10)]
+            options=list(tipper_details.keys()),
+            format_func=lambda x: f"{x} - {tipper_details[x]}"
         )
         
         # Then select tire for that tipper
@@ -320,12 +343,12 @@ elif menu == "Delete Tire":
                 st.session_state.tires = st.session_state.tires[
                     ~((st.session_state.tires['Tipper ID'] == selected_tipper) & 
                       (st.session_state.tires['Tire Number'] == tire_to_delete))
-                ]
+                ].copy()
                 
                 # Delete the associated images
                 if image_paths:
                     for img_path in image_paths:
-                        if os.path.exists(img_path):
+                        if img_path and os.path.exists(img_path):
                             try:
                                 os.remove(img_path)
                             except:
