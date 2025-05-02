@@ -298,7 +298,7 @@ elif menu == "Add/Update Tire":
             existing_tire = tires_df[
                 (tires_df['Tipper ID'] == tipper_id) & 
                 (tires_df['Tire Number'] == tire_number)
-            ].empty
+            ]
             
             tire_data = {
                 'tipper_id': tipper_id,
@@ -320,7 +320,7 @@ elif menu == "Add/Update Tire":
                 # Add new tire
                 if save_tire(tire_data):
                     st.success(f"Tire {tire_number} added to {tipper_id} successfully!")
-
+                    
 elif menu == "View All Tires":
     st.header("All Tires Information")
     tires_df = get_all_tires()
