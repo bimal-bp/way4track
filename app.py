@@ -2,36 +2,225 @@ import streamlit as st
 from PIL import Image
 import os
 import pandas as pd
+import psycopg2
+from psycopg2 import sql
+from datetime import datetime
 
-# Initialize session state for tire data
-if 'tires' not in st.session_state:
-    st.session_state.tires = pd.DataFrame(columns=[
-        'Tipper ID', 
-        'Tire Number', 
-        'Position', 
-        'Image Paths',  # Changed to store multiple image paths
-        'Condition (%)', 
-        'Date Installed',
-        'Starting KMR',  # Added starting KMR
-        'Current KMR',
-        'Last Checked'
+# Database connection function
+def get_db_connection():
+    return psycopg2.connect(
+        host="ep-bitter-snowflake-a4vh53sb-pooler.us-east-1.aws.neon.tech",
+        database="neondb",
+        user="neondb_owner",
+        password="npg_AyD21VBQvTPW",
+        sslmode="require"
+    )
+
+# Initialize database tables
+def initialize_database():
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    
+    # Create tires table if not exists
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS tires (
+        id SERIAL PRIMARY KEY,
+        tipper_id VARCHAR(50) NOT NULL,
+        tire_number VARCHAR(50) NOT NULL,
+        position VARCHAR(50) NOT NULL,
+        image_paths TEXT[],
+        condition_percent INTEGER NOT NULL,
+        date_installed DATE NOT NULL,
+        starting_kmr INTEGER NOT NULL,
+        current_kmr INTEGER NOT NULL,
+        last_checked TIMESTAMP NOT NULL,
+        UNIQUE(tipper_id, tire_number)
+    )
+    """)
+    
+    # Create tippers table if not exists
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS tippers (
+        tipper_id VARCHAR(50) PRIMARY KEY,
+        registration VARCHAR(100) NOT NULL,
+        description VARCHAR(100)
+    )
+    """)
+    
+    # Insert tipper details if table is empty
+    cursor.execute("SELECT COUNT(*) FROM tippers")
+    if cursor.fetchone()[0] == 0:
+        tipper_details = [
+            ("TIPPER-1", "JHOSB4166", "WATER TANKER"),
+            ("TIPPER-2", "AP39UQ-0095", None),
+            ("TIPPER-3", "AP39UQ-0097", "ROC"),
+            ("TIPPER-4", "AP39UW-9880", "ROCK BODY"),
+            ("TIPPER-5", "AP39UW-9881", "ROCK BODY"),
+            ("TIPPER-6", "AP39UY-4651", "ROCK BODY"),
+            ("TIPPER-7", "AP39UY-4652", "ROCK BODY"),
+            ("TIPPER-8", "AP39WC-0926", "ROCK BODY"),
+            ("TIPPER-9", "AP39WC-0927", "ROCK BODY")
+        ]
+        
+        for tipper in tipper_details:
+            cursor.execute(
+                "INSERT INTO tippers (tipper_id, registration, description) VALUES (%s, %s, %s)",
+                tipper
+            )
+    
+    conn.commit()
+    cursor.close()
+    conn.close()
+
+# Initialize database on app start
+initialize_database()
+
+# Function to get all tipper details
+def get_tipper_details():
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT tipper_id, registration, description FROM tippers")
+    tippers = cursor.fetchall()
+    cursor.close()
+    conn.close()
+    
+    tipper_details = {}
+    for tipper in tippers:
+        display_name = f"{tipper[1]}"
+        if tipper[2]:
+            display_name += f" ({tipper[2]})"
+        tipper_details[tipper[0]] = display_name
+    return tipper_details
+
+# Function to get all tires
+def get_all_tires():
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("""
+    SELECT 
+        tipper_id, tire_number, position, image_paths, 
+        condition_percent, date_installed, starting_kmr, 
+        current_kmr, last_checked
+    FROM tires
+    """)
+    tires = cursor.fetchall()
+    cursor.close()
+    conn.close()
+    
+    if not tires:
+        return pd.DataFrame(columns=[
+            'Tipper ID', 'Tire Number', 'Position', 'Image Paths',
+            'Condition (%)', 'Date Installed', 'Starting KMR',
+            'Current KMR', 'Last Checked'
+        ])
+    
+    return pd.DataFrame(tires, columns=[
+        'Tipper ID', 'Tire Number', 'Position', 'Image Paths',
+        'Condition (%)', 'Date Installed', 'Starting KMR',
+        'Current KMR', 'Last Checked'
     ])
+
+# Function to add/update tire
+def save_tire(tire_data, is_update=False):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    
+    try:
+        if is_update:
+            cursor.execute("""
+            UPDATE tires SET
+                position = %s,
+                image_paths = %s,
+                condition_percent = %s,
+                date_installed = %s,
+                starting_kmr = %s,
+                current_kmr = %s,
+                last_checked = %s
+            WHERE tipper_id = %s AND tire_number = %s
+            """, (
+                tire_data['position'],
+                tire_data['image_paths'],
+                tire_data['condition_percent'],
+                tire_data['date_installed'],
+                tire_data['starting_kmr'],
+                tire_data['current_kmr'],
+                tire_data['last_checked'],
+                tire_data['tipper_id'],
+                tire_data['tire_number']
+            ))
+        else:
+            cursor.execute("""
+            INSERT INTO tires (
+                tipper_id, tire_number, position, image_paths,
+                condition_percent, date_installed, starting_kmr,
+                current_kmr, last_checked
+            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+            """, (
+                tire_data['tipper_id'],
+                tire_data['tire_number'],
+                tire_data['position'],
+                tire_data['image_paths'],
+                tire_data['condition_percent'],
+                tire_data['date_installed'],
+                tire_data['starting_kmr'],
+                tire_data['current_kmr'],
+                tire_data['last_checked']
+            ))
+        
+        conn.commit()
+        return True
+    except Exception as e:
+        conn.rollback()
+        st.error(f"Database error: {e}")
+        return False
+    finally:
+        cursor.close()
+        conn.close()
+
+# Function to delete tire
+def delete_tire(tipper_id, tire_number):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    
+    try:
+        # First get image paths to delete files
+        cursor.execute(
+            "SELECT image_paths FROM tires WHERE tipper_id = %s AND tire_number = %s",
+            (tipper_id, tire_number)
+        )
+        result = cursor.fetchone()
+        image_paths = result[0] if result else None
+        
+        # Delete the record
+        cursor.execute(
+            "DELETE FROM tires WHERE tipper_id = %s AND tire_number = %s",
+            (tipper_id, tire_number)
+        )
+        conn.commit()
+        
+        # Delete associated images
+        if image_paths:
+            for img_path in image_paths:
+                if img_path and os.path.exists(img_path):
+                    try:
+                        os.remove(img_path)
+                    except:
+                        st.warning(f"Could not delete tire image file: {img_path}")
+        
+        return True
+    except Exception as e:
+        conn.rollback()
+        st.error(f"Database error: {e}")
+        return False
+    finally:
+        cursor.close()
+        conn.close()
 
 # Create directories if they don't exist
 os.makedirs("tire_images", exist_ok=True)
 
-# Tipper details with registration numbers
-tipper_details = {
-    "TIPPER-1": "JHOSB4166 (WATER TANKER)",
-    "TIPPER-2": "AP39UQ-0095",
-    "TIPPER-3": "AP39UQ-0097 (ROC)",
-    "TIPPER-4": "AP39UW-9880 (ROCK BODY)",
-    "TIPPER-5": "AP39UW-9881 (ROCK BODY)",
-    "TIPPER-6": "AP39UY-4651 (ROCK BODY)",
-    "TIPPER-7": "AP39UY-4652 (ROCK BODY)",
-    "TIPPER-8": "AP39WC-0926 (ROCK BODY)",
-    "TIPPER-9": "AP39WC-0927 (ROCK BODY)"
-}
+# Get tipper details
+tipper_details = get_tipper_details()
 
 # App title
 st.title("Tipper Tire Management System")
@@ -104,46 +293,39 @@ elif menu == "Add/Update Tire":
                         f.write(image_file.getbuffer())
                     image_paths.append(image_path)
             
-            # Check if this tire already exists for this tipper
-            existing_idx = st.session_state.tires[
-                (st.session_state.tires['Tipper ID'] == tipper_id) & 
-                (st.session_state.tires['Tire Number'] == tire_number)
-            ].index
+            # Check if this tire already exists
+            tires_df = get_all_tires()
+            existing_tire = tires_df[
+                (tires_df['Tipper ID'] == tipper_id) & 
+                (tires_df['Tire Number'] == tire_number)
+            ].empty
             
-            if not existing_idx.empty:
+            tire_data = {
+                'tipper_id': tipper_id,
+                'tire_number': tire_number,
+                'position': position,
+                'image_paths': image_paths,
+                'condition_percent': condition,
+                'date_installed': date_installed,
+                'starting_kmr': starting_kmr,
+                'current_kmr': current_kmr,
+                'last_checked': datetime.now()
+            }
+            
+            if not existing_tire.empty:
                 # Update existing tire
-                idx = existing_idx[0]
-                st.session_state.tires.at[idx, 'Position'] = position
-                st.session_state.tires.at[idx, 'Condition (%)'] = condition
-                st.session_state.tires.at[idx, 'Date Installed'] = date_installed
-                st.session_state.tires.at[idx, 'Starting KMR'] = starting_kmr
-                st.session_state.tires.at[idx, 'Current KMR'] = current_kmr
-                if image_paths:
-                    # Keep existing images if no new ones uploaded, else replace
-                    st.session_state.tires.at[idx, 'Image Paths'] = image_paths
-                st.session_state.tires.at[idx, 'Last Checked'] = pd.Timestamp.now()
-                st.success(f"Tire {tire_number} on {tipper_id} updated successfully!")
+                if save_tire(tire_data, is_update=True):
+                    st.success(f"Tire {tire_number} on {tipper_id} updated successfully!")
             else:
-                # Add new tire - using pd.concat instead of append
-                new_tire = pd.DataFrame([{
-                    'Tipper ID': tipper_id,
-                    'Tire Number': tire_number,
-                    'Position': position,
-                    'Image Paths': [image_paths],  # Store as list of paths
-                    'Condition (%)': condition,
-                    'Date Installed': date_installed,
-                    'Starting KMR': starting_kmr,
-                    'Current KMR': current_kmr,
-                    'Last Checked': pd.Timestamp.now()
-                }])
-                
-                st.session_state.tires = pd.concat([st.session_state.tires, new_tire], ignore_index=True)
-                st.success(f"Tire {tire_number} added to {tipper_id} successfully!")
+                # Add new tire
+                if save_tire(tire_data):
+                    st.success(f"Tire {tire_number} added to {tipper_id} successfully!")
 
 elif menu == "View All Tires":
     st.header("All Tires Information")
+    tires_df = get_all_tires()
     
-    if st.session_state.tires.empty:
+    if tires_df.empty:
         st.warning("No tires added yet!")
     else:
         # Filter by tipper if desired
@@ -154,9 +336,9 @@ elif menu == "View All Tires":
         )
         
         if selected_tipper != "All":
-            display_tires = st.session_state.tires[st.session_state.tires['Tipper ID'] == selected_tipper]
+            display_tires = tires_df[tires_df['Tipper ID'] == selected_tipper]
         else:
-            display_tires = st.session_state.tires
+            display_tires = tires_df
         
         # Display filtered tires in a table
         st.dataframe(display_tires)
@@ -172,9 +354,9 @@ elif menu == "View All Tires":
             )
             
             tipper_id, tire_num = selected_tire.split(" - ")
-            tire_data = st.session_state.tires[
-                (st.session_state.tires['Tipper ID'] == tipper_id) & 
-                (st.session_state.tires['Tire Number'] == tire_num)
+            tire_data = tires_df[
+                (tires_df['Tipper ID'] == tipper_id) & 
+                (tires_df['Tire Number'] == tire_num)
             ].iloc[0]
             
             col1, col2 = st.columns(2)
@@ -207,8 +389,9 @@ elif menu == "View All Tires":
 
 elif menu == "Tire Dashboard":
     st.header("Tire Condition Dashboard")
+    tires_df = get_all_tires()
     
-    if st.session_state.tires.empty:
+    if tires_df.empty:
         st.warning("No tires added yet!")
     else:
         # Filter by tipper if desired
@@ -219,9 +402,9 @@ elif menu == "Tire Dashboard":
         )
         
         if selected_tipper != "All":
-            display_tires = st.session_state.tires[st.session_state.tires['Tipper ID'] == selected_tipper]
+            display_tires = tires_df[tires_df['Tipper ID'] == selected_tipper]
         else:
-            display_tires = st.session_state.tires
+            display_tires = tires_df
         
         # Display condition summary
         st.subheader("Condition Summary")
@@ -308,8 +491,9 @@ elif menu == "Tire Dashboard":
 
 elif menu == "Delete Tire":
     st.header("Delete Tire Record")
+    tires_df = get_all_tires()
     
-    if st.session_state.tires.empty:
+    if tires_df.empty:
         st.warning("No tires added yet!")
     else:
         # Select tipper first
@@ -320,9 +504,7 @@ elif menu == "Delete Tire":
         )
         
         # Then select tire for that tipper
-        tipper_tires = st.session_state.tires[
-            st.session_state.tires['Tipper ID'] == selected_tipper
-        ]
+        tipper_tires = tires_df[tires_df['Tipper ID'] == selected_tipper]
         
         if tipper_tires.empty:
             st.warning(f"No tires found for {selected_tipper}")
@@ -333,28 +515,10 @@ elif menu == "Delete Tire":
             )
             
             if st.button("Delete Tire"):
-                # Get image paths before deletion
-                image_paths = st.session_state.tires[
-                    (st.session_state.tires['Tipper ID'] == selected_tipper) & 
-                    (st.session_state.tires['Tire Number'] == tire_to_delete)
-                ]['Image Paths'].values[0]
-                
-                # Delete the record
-                st.session_state.tires = st.session_state.tires[
-                    ~((st.session_state.tires['Tipper ID'] == selected_tipper) & 
-                      (st.session_state.tires['Tire Number'] == tire_to_delete))
-                ].copy()
-                
-                # Delete the associated images
-                if image_paths:
-                    for img_path in image_paths:
-                        if img_path and os.path.exists(img_path):
-                            try:
-                                os.remove(img_path)
-                            except:
-                                st.warning(f"Could not delete tire image file: {img_path}")
-                
-                st.success(f"Tire {tire_to_delete} on {selected_tipper} deleted successfully!")
+                if delete_tire(selected_tipper, tire_to_delete):
+                    st.success(f"Tire {tire_to_delete} on {selected_tipper} deleted successfully!")
+                    # Refresh the tires dataframe
+                    tires_df = get_all_tires()
 
 # Add some padding at the bottom
 st.markdown("<br><br>", unsafe_allow_html=True)
