@@ -9,10 +9,11 @@ if 'tires' not in st.session_state:
         'Tipper ID', 
         'Tire Number', 
         'Position', 
-        'Image Path', 
+        'Image Paths',  # Changed to store multiple image paths
         'Condition (%)', 
         'Date Installed',
-        'Current KM',
+        'Starting KMR',  # Added starting KMR
+        'Current KMR',
         'Last Checked'
     ])
 
@@ -65,18 +66,24 @@ if menu == "Add/Update Tire":
         with col2:
             condition = st.slider("Condition (%)", 0, 100, 80)
             date_installed = st.date_input("Date Installed")
-            current_km = st.number_input("Current KM Running", min_value=0, step=1000)
-            image_file = st.file_uploader("Upload Tire Image", type=["jpg", "png", "jpeg"])
+            starting_kmr = st.number_input("Starting KMR When Installed", min_value=0, step=1000)
+            current_kmr = st.number_input("Current KMR", min_value=starting_kmr, step=1000, value=starting_kmr)
+            image_files = st.file_uploader("Upload Tire Images (Multiple allowed)", 
+                                         type=["jpg", "png", "jpeg"], 
+                                         accept_multiple_files=True)
         
         submitted = st.form_submit_button("Save Tire")
         
         if submitted:
-            # Handle image upload
-            image_path = None
-            if image_file is not None:
-                image_path = f"tire_images/{tipper_id}_{tire_number}.{image_file.name.split('.')[-1]}"
-                with open(image_path, "wb") as f:
-                    f.write(image_file.getbuffer())
+            # Handle image uploads
+            image_paths = []
+            if image_files:
+                for i, image_file in enumerate(image_files):
+                    ext = image_file.name.split('.')[-1]
+                    image_path = f"tire_images/{tipper_id}_{tire_number}_{i}.{ext}"
+                    with open(image_path, "wb") as f:
+                        f.write(image_file.getbuffer())
+                    image_paths.append(image_path)
             
             # Check if this tire already exists for this tipper
             existing_idx = st.session_state.tires[
@@ -90,9 +97,11 @@ if menu == "Add/Update Tire":
                 st.session_state.tires.at[idx, 'Position'] = position
                 st.session_state.tires.at[idx, 'Condition (%)'] = condition
                 st.session_state.tires.at[idx, 'Date Installed'] = date_installed
-                st.session_state.tires.at[idx, 'Current KM'] = current_km
-                if image_path:
-                    st.session_state.tires.at[idx, 'Image Path'] = image_path
+                st.session_state.tires.at[idx, 'Starting KMR'] = starting_kmr
+                st.session_state.tires.at[idx, 'Current KMR'] = current_kmr
+                if image_paths:
+                    # Keep existing images if no new ones uploaded, else replace
+                    st.session_state.tires.at[idx, 'Image Paths'] = image_paths
                 st.session_state.tires.at[idx, 'Last Checked'] = pd.Timestamp.now()
                 st.success(f"Tire {tire_number} on {tipper_id} updated successfully!")
             else:
@@ -101,10 +110,11 @@ if menu == "Add/Update Tire":
                     'Tipper ID': tipper_id,
                     'Tire Number': tire_number,
                     'Position': position,
-                    'Image Path': image_path,
+                    'Image Paths': image_paths,
                     'Condition (%)': condition,
                     'Date Installed': date_installed,
-                    'Current KM': current_km,
+                    'Starting KMR': starting_kmr,
+                    'Current KMR': current_kmr,
                     'Last Checked': pd.Timestamp.now()
                 }
                 st.session_state.tires = st.session_state.tires.append(new_tire, ignore_index=True)
@@ -154,18 +164,25 @@ elif menu == "View All Tires":
                 st.write(f"**Position:** {tire_data['Position']}")
                 st.write(f"**Condition:** {tire_data['Condition (%)']}% remaining")
                 st.write(f"**Date Installed:** {tire_data['Date Installed']}")
-                st.write(f"**Current KM:** {tire_data['Current KM']:,} km")
+                st.write(f"**Starting KMR:** {tire_data['Starting KMR']:,} km")
+                st.write(f"**Current KMR:** {tire_data['Current KMR']:,} km")
+                st.write(f"**Total KMs Run:** {tire_data['Current KMR'] - tire_data['Starting KMR']:,} km")
                 st.write(f"**Last Checked:** {tire_data['Last Checked']}")
                 
             with col2:
-                if tire_data['Image Path'] and os.path.exists(tire_data['Image Path']):
-                    try:
-                        image = Image.open(tire_data['Image Path'])
-                        st.image(image, caption=f"{tipper_id} - {tire_num} Image", width=300)
-                    except:
-                        st.warning("Could not load image")
+                if tire_data['Image Paths']:
+                    st.subheader("Tire Images")
+                    for img_path in tire_data['Image Paths']:
+                        if os.path.exists(img_path):
+                            try:
+                                image = Image.open(img_path)
+                                st.image(image, caption=f"{tipper_id} - {tire_num}", width=300)
+                            except:
+                                st.warning(f"Could not load image: {img_path}")
+                        else:
+                            st.warning(f"Image not found: {img_path}")
                 else:
-                    st.warning("No image available for this tire")
+                    st.warning("No images available for this tire")
 
 elif menu == "Tire Dashboard":
     st.header("Tire Condition Dashboard")
@@ -192,15 +209,16 @@ elif menu == "Tire Dashboard":
         critical_tires = display_tires[display_tires['Condition (%)'] < 30]
         if not critical_tires.empty:
             st.warning("The following tires need immediate attention:")
-            st.dataframe(critical_tires[['Tipper ID', 'Tire Number', 'Position', 'Condition (%)', 'Current KM']])
+            st.dataframe(critical_tires[['Tipper ID', 'Tire Number', 'Position', 'Condition (%)', 'Current KMR']])
         else:
             st.success("All tires are in good condition!")
         
         # Show KM analysis
         st.subheader("Kilometer Analysis")
-        st.write("Average KM per tire:", f"{display_tires['Current KM'].mean():,.0f} km")
-        st.write("Highest KM tire:", f"{display_tires['Current KM'].max():,.0f} km")
-        st.write("Lowest KM tire:", f"{display_tires['Current KM'].min():,.0f} km")
+        display_tires['KMs Run'] = display_tires['Current KMR'] - display_tires['Starting KMR']
+        st.write("Average KM run per tire:", f"{display_tires['KMs Run'].mean():,.0f} km")
+        st.write("Highest KM run tire:", f"{display_tires['KMs Run'].max():,.0f} km")
+        st.write("Lowest KM run tire:", f"{display_tires['KMs Run'].min():,.0f} km")
         
         # Show position map for selected tipper
         if selected_tipper != "All":
@@ -257,7 +275,7 @@ elif menu == "Tire Dashboard":
                     position_data[pos.replace(" ", "")] = (
                         f"{tire_info['Tire Number']}<br>"
                         f"{tire_info['Condition (%)']}%<br>"
-                        f"{tire_info['Current KM']:,} km"
+                        f"{(tire_info['Current KMR'] - tire_info['Starting KMR']):,} km"
                     )
                 else:
                     position_data[pos.replace(" ", "")] = "Empty"
@@ -292,11 +310,11 @@ elif menu == "Delete Tire":
             )
             
             if st.button("Delete Tire"):
-                # Get image path before deletion
-                image_path = st.session_state.tires[
+                # Get image paths before deletion
+                image_paths = st.session_state.tires[
                     (st.session_state.tires['Tipper ID'] == selected_tipper) & 
                     (st.session_state.tires['Tire Number'] == tire_to_delete)
-                ]['Image Path'].values[0]
+                ]['Image Paths'].values[0]
                 
                 # Delete the record
                 st.session_state.tires = st.session_state.tires[
@@ -304,12 +322,14 @@ elif menu == "Delete Tire":
                       (st.session_state.tires['Tire Number'] == tire_to_delete))
                 ]
                 
-                # Delete the associated image
-                if image_path and os.path.exists(image_path):
-                    try:
-                        os.remove(image_path)
-                    except:
-                        st.warning("Could not delete tire image file")
+                # Delete the associated images
+                if image_paths:
+                    for img_path in image_paths:
+                        if os.path.exists(img_path):
+                            try:
+                                os.remove(img_path)
+                            except:
+                                st.warning(f"Could not delete tire image file: {img_path}")
                 
                 st.success(f"Tire {tire_to_delete} on {selected_tipper} deleted successfully!")
 
