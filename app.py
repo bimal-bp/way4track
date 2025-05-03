@@ -50,8 +50,15 @@ def initialize_database():
     cursor.execute("SELECT COUNT(*) FROM tippers")
     if cursor.fetchone()[0] == 0:
         tipper_details = [
-            ("TIPPER-101", "AP39UQ-0095"),
-            ("TIPPER-403", "AP39WC-0928")
+            ("TIPPER-1", "AP39UQ-0095"),
+            ("TIPPER-2", "AP39UQ-0097"),
+            ("TIPPER-3", "AP39UQ-0051"),
+            ("TIPPER-4", "AP39UQ-0052"),
+            ("TIPPER-5", "AP39UQ-0080"),
+            ("TIPPER-6", "AP39UQ-0081"),
+            ("TIPPER-7", "AP39UQ-0026"),
+            ("TIPPER-8", "AP39UQ-0027"),
+            ("TIPPER-9", "AP39UQ-0028")
         ]
         
         for tipper in tipper_details:
@@ -370,12 +377,36 @@ elif menu == "Tire Dashboard":
         with col1:
             st.metric("Average Condition", f"{tires_df['Condition (%)'].mean():.1f}%")
         with col2:
-            st.metric("Average KMs Run", f"{tires_df['KMs Run'].mean():,.0f} km")
+            st.metric("Total KMs Run", f"{tires_df['KMs Run'].sum():,.0f} km")
         with col3:
             worst_tire = tires_df.loc[tires_df['Condition (%)'].idxmin()]
             st.metric("Worst Condition", 
                      f"{worst_tire['Condition (%)']}% ({worst_tire['Position']})",
                      delta=f"{worst_tire['KMs Run']:,.0f} km")
+        
+        # Detailed tire information
+        st.subheader("Detailed Tire Information")
+        
+        # Create a more detailed table
+        detailed_df = tires_df[['Position', 'Tire Number', 'Starting KMR', 'Current KMR', 'KMs Run', 'Condition (%)', 'Date Installed']]
+        detailed_df = detailed_df.rename(columns={
+            'Starting KMR': 'Start KMR',
+            'Current KMR': 'Current KMR',
+            'KMs Run': 'KMs Run'
+        })
+        
+        # Format the table
+        st.dataframe(
+            detailed_df.style
+            .format({
+                'Start KMR': '{:,.0f}',
+                'Current KMR': '{:,.0f}',
+                'KMs Run': '{:,.0f}',
+                'Condition (%)': '{:.0f}%'
+            })
+            .apply(lambda x: ['background: #ffcccc' if x['Condition (%)'] < 30 else '' for i in x], axis=1),
+            use_container_width=True
+        )
         
         # Visual layout of all tires
         st.subheader("Tire Positions and Conditions")
@@ -420,8 +451,14 @@ elif menu == "Tire Dashboard":
                                             st.warning(f"Could not load image {idx+1}")
                             
                             # Display metrics
-                            st.metric("Condition", f"{tire_data['Condition (%)']}%")
+                            col1, col2 = st.columns(2)
+                            with col1:
+                                st.metric("Start KMR", f"{tire_data['Starting KMR']:,.0f}")
+                            with col2:
+                                st.metric("Current KMR", f"{tire_data['Current KMR']:,.0f}")
+                            
                             st.metric("KMs Run", f"{tire_data['KMs Run']:,.0f} km")
+                            st.metric("Condition", f"{tire_data['Condition (%)']}%")
                             st.caption(f"Installed: {tire_data['Date Installed']}")
                     else:
                         with st.container(border=True):
