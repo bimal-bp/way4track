@@ -35,7 +35,6 @@ def initialize_database():
         current_kmr INTEGER NOT NULL,
         last_checked TIMESTAMP NOT NULL,
         UNIQUE(tipper_id, tire_number)
-    )
     """)
     
     # Create tippers table if not exists
@@ -43,7 +42,6 @@ def initialize_database():
     CREATE TABLE IF NOT EXISTS tippers (
         tipper_id VARCHAR(50) PRIMARY KEY,
         registration VARCHAR(100) NOT NULL
-    )
     """)
     
     # Insert tipper details if table is empty
@@ -107,14 +105,26 @@ def save_tire_data(tipper_id, tire_number, position, image_path, condition, date
     cursor = conn.cursor()
     
     try:
-        # Check if tire exists
+        # Check if tire exists and get existing image paths
         cursor.execute("""
-        SELECT 1 FROM tires 
+        SELECT image_paths FROM tires 
         WHERE tipper_id = %s AND tire_number = %s
         """, (tipper_id, tire_number))
-        exists = cursor.fetchone()
+        existing_data = cursor.fetchone()
         
-        if exists:
+        # Prepare image paths array
+        if existing_data and existing_data[0]:
+            existing_paths = existing_data[0]
+        else:
+            existing_paths = []
+            
+        if image_path:
+            # Add new image path to the array
+            updated_paths = existing_paths + [image_path]
+        else:
+            updated_paths = existing_paths
+            
+        if existing_data:
             # Update existing tire
             cursor.execute("""
             UPDATE tires SET
@@ -128,7 +138,7 @@ def save_tire_data(tipper_id, tire_number, position, image_path, condition, date
             WHERE tipper_id = %s AND tire_number = %s
             """, (
                 position,
-                [image_path] if image_path else None,
+                updated_paths,
                 condition,
                 date_installed,
                 starting_kmr,
@@ -149,7 +159,7 @@ def save_tire_data(tipper_id, tire_number, position, image_path, condition, date
                 tipper_id,
                 tire_number,
                 position,
-                [image_path] if image_path else None,
+                updated_paths,
                 condition,
                 date_installed,
                 starting_kmr,
@@ -240,15 +250,18 @@ elif menu == "Tire Management":
                     key=f"img_{position}"
                 )
                 
-                # Display existing image if available
+                # Display existing images if available
                 if existing_data and existing_data[2] and len(existing_data[2]) > 0:
-                    existing_image_path = existing_data[2][0]
-                    if os.path.exists(existing_image_path):
-                        try:
-                            image = Image.open(existing_image_path)
-                            st.image(image, caption=f"Current {position} Tire", width=200)
-                        except:
-                            st.warning("Could not load existing image")
+                    st.write("Existing Images:")
+                    cols = st.columns(3)
+                    for idx, img_path in enumerate(existing_data[2]):
+                        if os.path.exists(img_path):
+                            try:
+                                with cols[idx % 3]:
+                                    image = Image.open(img_path)
+                                    st.image(image, caption=f"Image {idx+1}", width=150)
+                            except:
+                                st.warning(f"Could not load image {idx+1}")
                 
                 # Condition slider
                 condition = st.slider(
@@ -296,9 +309,10 @@ elif menu == "Tire Management":
                 image_path = None
                 
                 if uploaded_file is not None:
-                    # Save the uploaded file
+                    # Save the uploaded file with timestamp
+                    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
                     ext = uploaded_file.name.split('.')[-1]
-                    image_path = f"tire_images/{selected_tipper}_{tire_number}_{position.replace(' ', '_')}.{ext}"
+                    image_path = f"tire_images/{selected_tipper}_{tire_number}_{position.replace(' ', '_')}_{timestamp}.{ext}"
                     with open(image_path, "wb") as f:
                         f.write(uploaded_file.getbuffer())
                 
@@ -307,10 +321,6 @@ elif menu == "Tire Management":
                 date_installed = st.session_state.get(f"date_{position}")
                 starting_kmr = st.session_state.get(f"start_{position}")
                 current_kmr = st.session_state.get(f"current_{position}")
-                
-                # If there's existing data but no new image uploaded, keep the existing image
-                if existing_data and not uploaded_file and existing_data[2] and len(existing_data[2]) > 0:
-                    image_path = existing_data[2][0]
                 
                 # Save to database
                 if save_tire_data(
@@ -394,15 +404,18 @@ elif menu == "Tire Dashboard":
                         with st.container(border=True):
                             st.markdown(f"**{position}** ({tire_data['Tire Number']})")
                             
-                            # Display image if available
+                            # Display all images if available
                             if tire_data['Image Paths'] and len(tire_data['Image Paths']) > 0:
-                                img_path = tire_data['Image Paths'][0]
-                                if os.path.exists(img_path):
-                                    try:
-                                        image = Image.open(img_path)
-                                        st.image(image, width=150)
-                                    except:
-                                        st.warning("Could not load image")
+                                st.write("Tire Images:")
+                                img_cols = st.columns(3)
+                                for idx, img_path in enumerate(tire_data['Image Paths']):
+                                    if os.path.exists(img_path):
+                                        try:
+                                            with img_cols[idx % 3]:
+                                                image = Image.open(img_path)
+                                                st.image(image, caption=f"Image {idx+1}", width=150)
+                                        except:
+                                            st.warning(f"Could not load image {idx+1}")
                             
                             # Display metrics
                             st.metric("Condition", f"{tire_data['Condition (%)']}%")
