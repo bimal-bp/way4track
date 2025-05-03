@@ -78,14 +78,14 @@ initialize_database()
 def get_tipper_details():
     conn = get_db_connection()
     cursor = conn.cursor()
-    cursor.execute("SELECT tipper_id, registration FROM tippers")
+    cursor.execute("SELECT tipper_id, registration FROM tippers ORDER BY tipper_id")
     tippers = cursor.fetchall()
     cursor.close()
     conn.close()
     
     tipper_details = {}
     for tipper in tippers:
-        display_name = f"{tipper[1]}"
+        display_name = f"{tipper[0]} - {tipper[1]}"
         tipper_details[tipper[0]] = display_name
     return tipper_details
 
@@ -168,7 +168,7 @@ def save_tire_data(tipper_id, tire_number, position, image_path, condition, date
                 tipper_id,
                 tire_number,
                 position,
-                updated_paths,
+                updated_paths if updated_paths else None,
                 condition,
                 date_installed,
                 starting_kmr,
@@ -204,17 +204,51 @@ menu = st.sidebar.selectbox(
 
 if menu == "Tipper Info":
     st.header("ℹ️ Tipper Information")
-    tipper_info_df = pd.DataFrame.from_dict(tipper_details, orient='index', columns=['Registration'])
-    st.dataframe(tipper_info_df)
+    # Display all tippers in a clean table
+    conn = get_db_connection()
+    tipper_df = pd.read_sql("SELECT tipper_id as \"Tipper ID\", registration as Registration FROM tippers ORDER BY tipper_id", conn)
+    conn.close()
+    
+    st.dataframe(
+        tipper_df,
+        use_container_width=True,
+        hide_index=True
+    )
+    
+    # Add some statistics
+    st.subheader("Tipper Statistics")
+    conn = get_db_connection()
+    stats_df = pd.read_sql("""
+    SELECT 
+        t.tipper_id as "Tipper ID",
+        t.registration as Registration,
+        COUNT(ty.tire_number) as "Tire Count",
+        COALESCE(AVG(ty.condition_percent), 0) as "Avg Condition (%)",
+        COALESCE(SUM(ty.current_kmr - ty.starting_kmr), 0) as "Total KMs Run"
+    FROM tippers t
+    LEFT JOIN tires ty ON t.tipper_id = ty.tipper_id
+    GROUP BY t.tipper_id, t.registration
+    ORDER BY t.tipper_id
+    """, conn)
+    conn.close()
+    
+    st.dataframe(
+        stats_df.style.format({
+            "Avg Condition (%)": "{:.1f}%",
+            "Total KMs Run": "{:,.0f} km"
+        }),
+        use_container_width=True,
+        hide_index=True
+    )
 
 elif menu == "Tire Management":
     st.header("🛠️ Tire Management")
     
-    # Select tipper
+    # Select tipper with proper display of all options
     selected_tipper = st.selectbox(
         "Select Tipper", 
         options=list(tipper_details.keys()),
-        format_func=lambda x: f"{x} - {tipper_details[x]}",
+        format_func=lambda x: tipper_details[x],
         index=0
     )
     
@@ -233,7 +267,7 @@ elif menu == "Tire Management":
     # Create a form for all tires
     form = st.form(key="tire_management_form")
     with form:
-        st.subheader(f"Tire Details for {selected_tipper} - {tipper_details[selected_tipper]}")
+        st.subheader(f"Tire Details for {tipper_details[selected_tipper]}")
         
         # Create two columns for better layout
         col1, col2 = st.columns(2)
@@ -352,11 +386,11 @@ elif menu == "Tire Management":
 elif menu == "Tire Dashboard":
     st.header("📊 Tire Dashboard")
     
-    # Select tipper
+    # Select tipper with proper display of all options
     selected_tipper = st.selectbox(
         "Select Tipper to View", 
         options=list(tipper_details.keys()),
-        format_func=lambda x: f"{x} - {tipper_details[x]}",
+        format_func=lambda x: tipper_details[x],
         index=0
     )
     
@@ -364,7 +398,7 @@ elif menu == "Tire Dashboard":
     tires = get_tires_for_tipper(selected_tipper)
     
     if not tires:
-        st.warning(f"No tire data available for {selected_tipper}")
+        st.warning(f"No tire data available for {tipper_details[selected_tipper]}")
     else:
         # Convert to DataFrame for visualization
         tires_df = pd.DataFrame(tires, columns=[
