@@ -51,15 +51,15 @@ def initialize_database():
     cursor.execute("SELECT COUNT(*) FROM tippers")
     if cursor.fetchone()[0] == 0:
         tipper_details = [
-            ("TIPPER-1", "JHOSB4166", "WATER TANKER"),
-            ("TIPPER-2", "AP39UQ-0095", None),
-            ("TIPPER-3", "AP39UQ-0097", "ROC"),
-            ("TIPPER-4", "AP39UW-9880", "ROCK BODY"),
-            ("TIPPER-5", "AP39UW-9881", "ROCK BODY"),
-            ("TIPPER-6", "AP39UY-4651", "ROCK BODY"),
-            ("TIPPER-7", "AP39UY-4652", "ROCK BODY"),
-            ("TIPPER-8", "AP39WC-0926", "ROCK BODY"),
-            ("TIPPER-9", "AP39WC-0927", "ROCK BODY")
+            ("TIPPER-1", "AP39UQ-0095"),
+            ("TIPPER-2", "AP39UQ-0097"),
+            ("TIPPER-3", "AP39UW-9880"),
+            ("TIPPER-4", "AP39UW-9881"),
+            ("TIPPER-5", "AP39UY-4651"),
+            ("TIPPER-6", "AP39UY-4652"),
+            ("TIPPER-7", "AP39WC-0926"),
+            ("TIPPER-8", "AP39WC-0927"),
+            ("TIPPER-9", "AP39WC-0928")
         ]
         
         for tipper in tipper_details:
