@@ -35,6 +35,7 @@ def initialize_database():
         current_kmr INTEGER NOT NULL,
         last_checked TIMESTAMP NOT NULL,
         UNIQUE(tipper_id, tire_number)
+    )
     """)
     
     # Create tippers table if not exists
@@ -42,6 +43,7 @@ def initialize_database():
     CREATE TABLE IF NOT EXISTS tippers (
         tipper_id VARCHAR(50) PRIMARY KEY,
         registration VARCHAR(100) NOT NULL
+    )
     """)
     
     # Insert tipper details if table is empty
@@ -61,7 +63,7 @@ def initialize_database():
     conn.commit()
     cursor.close()
     conn.close()
-
+    
 # Initialize database on app start
 initialize_database()
 
