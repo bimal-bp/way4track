@@ -1,6 +1,6 @@
 import streamlit as st
 from PIL import Image
-import os
+import io
 import pandas as pd
 import psycopg2
 from psycopg2 import sql
@@ -9,13 +9,12 @@ from datetime import datetime
 # Database connection function
 def get_db_connection():
     return psycopg2.connect(
-        host="ep-bitter-snowflake-a4vh53sb-pooler.us-east-1.aws.neon.tech",
+        host="ep-cool-field-a4v58yfe-pooler.us-east-1.aws.neon.tech",
         database="neondb",
         user="neondb_owner",
-        password="npg_AyD21VBQvTPW",
+        password="npg_3vkINAuWoQz6",
         sslmode="require"
     )
-
 # Initialize database tables
 def initialize_database():
     conn = get_db_connection()
@@ -28,13 +27,25 @@ def initialize_database():
         tipper_id VARCHAR(50) NOT NULL,
         tire_number VARCHAR(50) NOT NULL,
         position VARCHAR(50) NOT NULL,
-        image_paths TEXT[],
         condition_percent INTEGER NOT NULL,
         date_installed DATE NOT NULL,
         starting_kmr INTEGER NOT NULL,
         current_kmr INTEGER NOT NULL,
         last_checked TIMESTAMP NOT NULL,
         UNIQUE(tipper_id, tire_number)
+    )
+    """)
+    
+    # Create tire_images table for storing images
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS tire_images (
+        id SERIAL PRIMARY KEY,
+        tipper_id VARCHAR(50) NOT NULL,
+        tire_number VARCHAR(50) NOT NULL,
+        position VARCHAR(50) NOT NULL,
+        image_data BYTEA NOT NULL,
+        upload_time TIMESTAMP NOT NULL,
+        FOREIGN KEY (tipper_id, tire_number) REFERENCES tires (tipper_id, tire_number) ON DELETE CASCADE
     )
     """)
     
@@ -95,50 +106,75 @@ def get_tires_for_tipper(tipper_id):
     cursor = conn.cursor()
     cursor.execute("""
     SELECT 
-        tire_number, position, image_paths, 
-        condition_percent, date_installed, starting_kmr, 
-        current_kmr, last_checked
+        tire_number, position, condition_percent, 
+        date_installed, starting_kmr, current_kmr, last_checked
     FROM tires
     WHERE tipper_id = %s
     ORDER BY position
     """, (tipper_id,))
     tires = cursor.fetchall()
+    
+    # Get images for each tire
+    tires_with_images = []
+    for tire in tires:
+        cursor.execute("""
+        SELECT image_data FROM tire_images
+        WHERE tipper_id = %s AND tire_number = %s
+        ORDER BY upload_time DESC
+        """, (tipper_id, tire[0]))
+        images = [row[0] for row in cursor.fetchall()]
+        tires_with_images.append(tire + (images,))
+    
     cursor.close()
     conn.close()
     
-    return tires
+    return tires_with_images
 
-# Function to save/update tire data
-def save_tire_data(tipper_id, tire_number, position, image_path, condition, date_installed, starting_kmr, current_kmr):
+# Function to save tire images to database
+def save_tire_image(tipper_id, tire_number, position, image_file):
     conn = get_db_connection()
     cursor = conn.cursor()
     
     try:
-        # Check if tire exists and get existing image paths
         cursor.execute("""
-        SELECT image_paths FROM tires 
+        INSERT INTO tire_images (
+            tipper_id, tire_number, position, image_data, upload_time
+        ) VALUES (%s, %s, %s, %s, %s)
+        """, (
+            tipper_id,
+            tire_number,
+            position,
+            image_file.read(),
+            datetime.now()
+        ))
+        conn.commit()
+        return True
+    except Exception as e:
+        conn.rollback()
+        st.error(f"Error saving image: {e}")
+        return False
+    finally:
+        cursor.close()
+        conn.close()
+
+# Function to save/update tire data
+def save_tire_data(tipper_id, tire_number, position, condition, date_installed, starting_kmr, current_kmr):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    
+    try:
+        # Check if tire exists
+        cursor.execute("""
+        SELECT 1 FROM tires 
         WHERE tipper_id = %s AND tire_number = %s
         """, (tipper_id, tire_number))
-        existing_data = cursor.fetchone()
+        exists = cursor.fetchone() is not None
         
-        # Prepare image paths array
-        if existing_data and existing_data[0]:
-            existing_paths = existing_data[0]
-        else:
-            existing_paths = []
-            
-        if image_path:
-            # Add new image path to the array
-            updated_paths = existing_paths + [image_path]
-        else:
-            updated_paths = existing_paths
-            
-        if existing_data:
+        if exists:
             # Update existing tire
             cursor.execute("""
             UPDATE tires SET
                 position = %s,
-                image_paths = %s,
                 condition_percent = %s,
                 date_installed = %s,
                 starting_kmr = %s,
@@ -147,7 +183,6 @@ def save_tire_data(tipper_id, tire_number, position, image_path, condition, date
             WHERE tipper_id = %s AND tire_number = %s
             """, (
                 position,
-                updated_paths,
                 condition,
                 date_installed,
                 starting_kmr,
@@ -160,15 +195,14 @@ def save_tire_data(tipper_id, tire_number, position, image_path, condition, date
             # Insert new tire
             cursor.execute("""
             INSERT INTO tires (
-                tipper_id, tire_number, position, image_paths,
+                tipper_id, tire_number, position,
                 condition_percent, date_installed, starting_kmr,
                 current_kmr, last_checked
-            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
             """, (
                 tipper_id,
                 tire_number,
                 position,
-                updated_paths if updated_paths else None,
                 condition,
                 date_installed,
                 starting_kmr,
@@ -185,9 +219,6 @@ def save_tire_data(tipper_id, tire_number, position, image_path, condition, date
     finally:
         cursor.close()
         conn.close()
-
-# Create directories if they don't exist
-os.makedirs("tire_images", exist_ok=True)
 
 # Get tipper details
 tipper_details = get_tipper_details()
@@ -294,30 +325,29 @@ elif menu == "Tire Management":
                 )
                 
                 # Display existing images if available
-                if existing_data and existing_data[2]:
+                if existing_data and existing_data[7]:  # images are at index 7
                     st.write("Existing Images:")
                     img_cols = st.columns(3)
-                    for idx, img_path in enumerate(existing_data[2]):
-                        if os.path.exists(img_path):
-                            try:
-                                with img_cols[idx % 3]:
-                                    image = Image.open(img_path)
-                                    st.image(image, caption=f"Image {idx+1}", width=150)
-                            except:
-                                st.warning(f"Could not load image {idx+1}")
+                    for idx, img_data in enumerate(existing_data[7]):
+                        try:
+                            with img_cols[idx % 3]:
+                                image = Image.open(io.BytesIO(img_data))
+                                st.image(image, caption=f"Image {idx+1}", width=150)
+                        except:
+                            st.warning(f"Could not load image {idx+1}")
                 
                 # Condition slider
                 condition = st.slider(
                     "Condition (%)",
                     min_value=0, max_value=100,
-                    value=existing_data[3] if existing_data else 80,
+                    value=existing_data[2] if existing_data else 80,
                     key=f"cond_{position}"
                 )
                 
                 # Date installed
                 date_installed = st.date_input(
                     "Date Installed",
-                    value=existing_data[4] if existing_data else datetime.now().date(),
+                    value=existing_data[3] if existing_data else datetime.now().date(),
                     key=f"date_{position}"
                 )
                 
@@ -327,14 +357,14 @@ elif menu == "Tire Management":
                     starting_kmr = st.number_input(
                         "Starting KMR",
                         min_value=0,
-                        value=existing_data[5] if existing_data else 0,
+                        value=existing_data[4] if existing_data else 0,
                         key=f"start_{position}"
                     )
                 with kmr_col2:
                     current_kmr = st.number_input(
                         "Current KMR",
                         min_value=starting_kmr,
-                        value=existing_data[6] if existing_data else starting_kmr,
+                        value=existing_data[5] if existing_data else starting_kmr,
                         key=f"current_{position}"
                     )
                 
@@ -350,38 +380,34 @@ elif menu == "Tire Management":
         for i, position in enumerate(positions):
             tire_number = f"Tire-{i+1}"
             
-            # Handle image upload
-            uploaded_file = st.session_state.get(f"img_{position}")
-            image_path = None
-            
-            if uploaded_file is not None:
-                # Save the uploaded file with timestamp
-                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-                ext = uploaded_file.name.split('.')[-1]
-                image_path = f"tire_images/{selected_tipper}_{tire_number}_{position.replace(' ', '_')}_{timestamp}.{ext}"
-                with open(image_path, "wb") as f:
-                    f.write(uploaded_file.getbuffer())
-            
             # Get other form data
             condition = st.session_state.get(f"cond_{position}")
             date_installed = st.session_state.get(f"date_{position}")
             starting_kmr = st.session_state.get(f"start_{position}")
             current_kmr = st.session_state.get(f"current_{position}")
             
-            # Save to database
+            # Save tire data to database
             if save_tire_data(
                 selected_tipper, tire_number, position, 
-                image_path, condition, date_installed, 
+                condition, date_installed, 
                 starting_kmr, current_kmr
             ):
                 success_count += 1
             
+            # Handle image upload separately
+            uploaded_file = st.session_state.get(f"img_{position}")
+            if uploaded_file is not None:
+                if save_tire_image(selected_tipper, tire_number, position, uploaded_file):
+                    success_count += 0.5  # partial success for image upload
+            
             progress_bar.progress((i + 1) / len(positions))
         
-        if success_count == len(positions):
+        if success_count >= len(positions):
             st.success("All tire data saved successfully!")
+        elif success_count > 0:
+            st.warning(f"Saved data for {int(success_count)} out of {len(positions)} tires. Some updates may have failed.")
         else:
-            st.warning(f"Saved {success_count} out of {len(positions)} tires. Some updates may have failed.")
+            st.error("Failed to save any tire data.")
 
 elif menu == "Tire Dashboard":
     st.header("📊 Tire Dashboard")
@@ -402,8 +428,8 @@ elif menu == "Tire Dashboard":
     else:
         # Convert to DataFrame for visualization
         tires_df = pd.DataFrame(tires, columns=[
-            'Tire Number', 'Position', 'Image Paths', 'Condition (%)',
-            'Date Installed', 'Starting KMR', 'Current KMR', 'Last Checked'
+            'Tire Number', 'Position', 'Condition (%)',
+            'Date Installed', 'Starting KMR', 'Current KMR', 'Last Checked', 'Images'
         ])
         
         # Calculate KMs Run
@@ -475,17 +501,16 @@ elif menu == "Tire Dashboard":
                             st.markdown(f"**{position}** ({tire_data['Tire Number']})")
                             
                             # Display all images if available
-                            if tire_data['Image Paths'] and len(tire_data['Image Paths']) > 0:
+                            if tire_data['Images'] and len(tire_data['Images']) > 0:
                                 st.write("Tire Images:")
                                 img_cols = st.columns(3)
-                                for idx, img_path in enumerate(tire_data['Image Paths']):
-                                    if os.path.exists(img_path):
-                                        try:
-                                            with img_cols[idx % 3]:
-                                                image = Image.open(img_path)
-                                                st.image(image, caption=f"Image {idx+1}", width=150)
-                                        except:
-                                            st.warning(f"Could not load image {idx+1}")
+                                for idx, img_data in enumerate(tire_data['Images']):
+                                    try:
+                                        with img_cols[idx % 3]:
+                                            image = Image.open(io.BytesIO(img_data))
+                                            st.image(image, caption=f"Image {idx+1}", width=150)
+                                    except:
+                                        st.warning(f"Could not load image {idx+1}")
                             
                             # Display metrics
                             col1, col2 = st.columns(2)
