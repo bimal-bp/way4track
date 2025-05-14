@@ -35,7 +35,6 @@ def initialize_database():
         current_kmr INTEGER NOT NULL,
         last_checked TIMESTAMP NOT NULL,
         UNIQUE(tipper_id, tire_number)
-    )
     """)
     
     # Create tire_images table for storing images
@@ -48,7 +47,6 @@ def initialize_database():
         image_data BYTEA NOT NULL,
         upload_time TIMESTAMP NOT NULL,
         FOREIGN KEY (tipper_id, tire_number) REFERENCES tires (tipper_id, tire_number) ON DELETE CASCADE
-    )
     """)
     
     # Create tippers table if not exists
@@ -56,7 +54,6 @@ def initialize_database():
     CREATE TABLE IF NOT EXISTS tippers (
         tipper_id VARCHAR(50) PRIMARY KEY,
         registration VARCHAR(100) NOT NULL
-    )
     """)
     
     # Insert tipper details if table is empty
@@ -422,11 +419,11 @@ elif menu == "Tire Dashboard":
         index=0
     )
     
-    # Generate random inventory numbers
-    new_tires = random.randint(5, 20)
-    retread_tires = random.randint(3, 15)
-    sent_for_retread = random.randint(1, 10)
-    scrapped_tires = random.randint(1, 5)
+    # Updated inventory numbers as requested
+    new_tires = 2
+    retread_tires = 3
+    sent_for_retread = 4
+    scrapped_tires = 93
     
     # Display inventory metrics
     st.subheader("Tire Inventory Status")
