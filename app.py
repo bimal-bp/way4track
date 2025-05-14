@@ -1,4 +1,3 @@
-
 import streamlit as st
 from PIL import Image
 import io
@@ -6,6 +5,7 @@ import pandas as pd
 import psycopg2
 from psycopg2 import sql
 from datetime import datetime
+import random
 
 # Database connection function
 def get_db_connection():
@@ -16,6 +16,7 @@ def get_db_connection():
         password="npg_3vkINAuWoQz6",
         sslmode="require"
     )
+
 # Initialize database tables
 def initialize_database():
     conn = get_db_connection()
@@ -421,6 +422,24 @@ elif menu == "Tire Dashboard":
         index=0
     )
     
+    # Generate random inventory numbers
+    new_tires = random.randint(5, 20)
+    retread_tires = random.randint(3, 15)
+    sent_for_retread = random.randint(1, 10)
+    scrapped_tires = random.randint(1, 5)
+    
+    # Display inventory metrics
+    st.subheader("Tire Inventory Status")
+    col1, col2, col3, col4 = st.columns(4)
+    with col1:
+        st.metric("New Tires in Stock", new_tires)
+    with col2:
+        st.metric("Retread Tires Available", retread_tires)
+    with col3:
+        st.metric("Tires Sent for Retreading", sent_for_retread)
+    with col4:
+        st.metric("Scrapped Tires", scrapped_tires)
+    
     # Get tire data
     tires = get_tires_for_tipper(selected_tipper)
     
@@ -436,22 +455,18 @@ elif menu == "Tire Dashboard":
         # Calculate KMs Run
         tires_df['KMs Run'] = tires_df['Current KMR'] - tires_df['Starting KMR']
         
-        # Show summary metrics
-        col1, col2, col3 = st.columns(3)
-        with col1:
-            st.metric("Average Condition", f"{tires_df['Condition (%)'].mean():.1f}%")
-        with col2:
-            st.metric("Total KMs Run", f"{tires_df['KMs Run'].sum():,.0f} km")
-        with col3:
-            worst_tire = tires_df.loc[tires_df['Condition (%)'].idxmin()]
-            st.metric("Worst Condition", 
-                     f"{worst_tire['Condition (%)']}% ({worst_tire['Position']})",
-                     delta=f"{worst_tire['KMs Run']:,.0f} km")
-        
-        # Detailed tire information
+        # Detailed tire information with color coding
         st.subheader("Detailed Tire Information")
         
-        # Create a more detailed table
+        def color_condition(val):
+            if val >= 70:
+                color = 'green'
+            elif val >= 40:
+                color = 'orange'
+            else:
+                color = 'red'
+            return f'color: {color}; font-weight: bold'
+        
         detailed_df = tires_df[['Position', 'Tire Number', 'Starting KMR', 'Current KMR', 'KMs Run', 'Condition (%)', 'Date Installed']]
         detailed_df = detailed_df.rename(columns={
             'Starting KMR': 'Start KMR',
@@ -459,7 +474,6 @@ elif menu == "Tire Dashboard":
             'KMs Run': 'KMs Run'
         })
         
-        # Format the table
         st.dataframe(
             detailed_df.style
             .format({
@@ -468,6 +482,7 @@ elif menu == "Tire Dashboard":
                 'KMs Run': '{:,.0f}',
                 'Condition (%)': '{:.0f}%'
             })
+            .applymap(color_condition, subset=['Condition (%)'])
             .apply(lambda x: ['background: #ffcccc' if x['Condition (%)'] < 30 else '' for i in x], axis=1),
             use_container_width=True
         )
@@ -497,8 +512,28 @@ elif menu == "Tire Dashboard":
                     if not tire_data.empty:
                         tire_data = tire_data.iloc[0]
                         
+                        # Determine color based on condition
+                        if tire_data['Condition (%)'] >= 70:
+                            border_color = "green"
+                        elif tire_data['Condition (%)'] >= 40:
+                            border_color = "orange"
+                        else:
+                            border_color = "red"
+                        
                         # Display tire info in a container
                         with st.container(border=True):
+                            # Add custom CSS for the border color
+                            st.markdown(
+                                f"""<style>
+                                div[data-testid="stVerticalBlock"] > div[data-testid="stVerticalBlockBorderWrapper"]:has(>div>div>div>div>div>p:contains('{position}')) {{
+                                    border: 2px solid {border_color};
+                                    border-radius: 0.5rem;
+                                    padding: 1rem;
+                                }}
+                                </style>""",
+                                unsafe_allow_html=True
+                            )
+                            
                             st.markdown(f"**{position}** ({tire_data['Tire Number']})")
                             
                             # Display all images if available
@@ -513,7 +548,7 @@ elif menu == "Tire Dashboard":
                                     except:
                                         st.warning(f"Could not load image {idx+1}")
                             
-                            # Display metrics
+                            # Display metrics with color coding
                             col1, col2 = st.columns(2)
                             with col1:
                                 st.metric("Start KMR", f"{tire_data['Starting KMR']:,.0f}")
@@ -521,7 +556,11 @@ elif menu == "Tire Dashboard":
                                 st.metric("Current KMR", f"{tire_data['Current KMR']:,.0f}")
                             
                             st.metric("KMs Run", f"{tire_data['KMs Run']:,.0f} km")
-                            st.metric("Condition", f"{tire_data['Condition (%)']}%")
+                            
+                            # Condition with color coding
+                            condition_color = "green" if tire_data['Condition (%)'] >= 70 else "orange" if tire_data['Condition (%)'] >= 40 else "red"
+                            st.markdown(f"**Condition:** :{condition_color}[{tire_data['Condition (%)']}%]")
+                            
                             st.caption(f"Installed: {tire_data['Date Installed']}")
                     else:
                         with st.container(border=True):
@@ -533,7 +572,20 @@ elif menu == "Tire Dashboard":
         st.bar_chart(tires_df.set_index('Position')['Condition (%)'])
         
         # Tires needing attention
-        critical_tires = tires_df[tires_df['Condition (%)'] < 30]
+        critical_tires = tires_df[tires_df['Condition (%)'] < 40]
         if not critical_tires.empty:
             st.warning("⚠️ The following tires need attention:")
-            st.dataframe(critical_tires[['Position', 'Tire Number', 'Condition (%)', 'KMs Run']])
+            
+            def attention_color(row):
+                if row['Condition (%)'] < 20:
+                    return ['background-color: #ffcccc'] * len(row)
+                elif row['Condition (%)'] < 30:
+                    return ['background-color: #ffe6cc'] * len(row)
+                else:
+                    return ['background-color: #fff2cc'] * len(row)
+            
+            st.dataframe(
+                critical_tires[['Position', 'Tire Number', 'Condition (%)', 'KMs Run']]
+                .style.apply(attention_color, axis=1),
+                use_container_width=True
+            )
