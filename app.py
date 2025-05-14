@@ -15,6 +15,7 @@ def get_db_connection():
         password="npg_3vkINAuWoQz6",
         sslmode="require"
     )
+
 # Initialize database tables
 def initialize_database():
     conn = get_db_connection()
@@ -32,6 +33,7 @@ def initialize_database():
         starting_kmr INTEGER NOT NULL,
         current_kmr INTEGER NOT NULL,
         last_checked TIMESTAMP NOT NULL,
+        tire_status VARCHAR(20) NOT NULL DEFAULT 'new',
         UNIQUE(tipper_id, tire_number)
     )
     """)
@@ -57,6 +59,25 @@ def initialize_database():
     )
     """)
     
+    # Create inventory table for tire counts
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS tire_inventory (
+        id SERIAL PRIMARY KEY,
+        new_tires INTEGER DEFAULT 0,
+        retread_tires INTEGER DEFAULT 0,
+        scrap_tires INTEGER DEFAULT 0,
+        last_updated TIMESTAMP NOT NULL
+    )
+    """)
+    
+    # Insert initial inventory if empty
+    cursor.execute("SELECT COUNT(*) FROM tire_inventory")
+    if cursor.fetchone()[0] == 0:
+        cursor.execute("""
+        INSERT INTO tire_inventory (new_tires, retread_tires, scrap_tires, last_updated)
+        VALUES (20, 10, 5, %s)
+        """, (datetime.now(),))
+    
     # Insert tipper details if table is empty
     cursor.execute("SELECT COUNT(*) FROM tippers")
     if cursor.fetchone()[0] == 0:
@@ -81,7 +102,7 @@ def initialize_database():
     conn.commit()
     cursor.close()
     conn.close()
-    
+
 # Initialize database on app start
 initialize_database()
 
@@ -107,7 +128,7 @@ def get_tires_for_tipper(tipper_id):
     cursor.execute("""
     SELECT 
         tire_number, position, condition_percent, 
-        date_installed, starting_kmr, current_kmr, last_checked
+        date_installed, starting_kmr, current_kmr, last_checked, tire_status
     FROM tires
     WHERE tipper_id = %s
     ORDER BY position
@@ -158,7 +179,7 @@ def save_tire_image(tipper_id, tire_number, position, image_file):
         conn.close()
 
 # Function to save/update tire data
-def save_tire_data(tipper_id, tire_number, position, condition, date_installed, starting_kmr, current_kmr):
+def save_tire_data(tipper_id, tire_number, position, condition, date_installed, starting_kmr, current_kmr, tire_status):
     conn = get_db_connection()
     cursor = conn.cursor()
     
@@ -179,7 +200,8 @@ def save_tire_data(tipper_id, tire_number, position, condition, date_installed, 
                 date_installed = %s,
                 starting_kmr = %s,
                 current_kmr = %s,
-                last_checked = %s
+                last_checked = %s,
+                tire_status = %s
             WHERE tipper_id = %s AND tire_number = %s
             """, (
                 position,
@@ -188,6 +210,7 @@ def save_tire_data(tipper_id, tire_number, position, condition, date_installed, 
                 starting_kmr,
                 current_kmr,
                 datetime.now(),
+                tire_status,
                 tipper_id,
                 tire_number
             ))
@@ -197,8 +220,8 @@ def save_tire_data(tipper_id, tire_number, position, condition, date_installed, 
             INSERT INTO tires (
                 tipper_id, tire_number, position,
                 condition_percent, date_installed, starting_kmr,
-                current_kmr, last_checked
-            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                current_kmr, last_checked, tire_status
+            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
             """, (
                 tipper_id,
                 tire_number,
@@ -207,7 +230,8 @@ def save_tire_data(tipper_id, tire_number, position, condition, date_installed, 
                 date_installed,
                 starting_kmr,
                 current_kmr,
-                datetime.now()
+                datetime.now(),
+                tire_status
             ))
         
         conn.commit()
@@ -220,6 +244,45 @@ def save_tire_data(tipper_id, tire_number, position, condition, date_installed, 
         cursor.close()
         conn.close()
 
+# Function to get tire inventory
+def get_tire_inventory():
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT new_tires, retread_tires, scrap_tires FROM tire_inventory ORDER BY id DESC LIMIT 1")
+    inventory = cursor.fetchone()
+    cursor.close()
+    conn.close()
+    return inventory
+
+# Function to update tire inventory
+def update_tire_inventory(new_tires, retread_tires, scrap_tires):
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    
+    try:
+        cursor.execute("""
+        INSERT INTO tire_inventory (new_tires, retread_tires, scrap_tires, last_updated)
+        VALUES (%s, %s, %s, %s)
+        """, (new_tires, retread_tires, scrap_tires, datetime.now()))
+        conn.commit()
+        return True
+    except Exception as e:
+        conn.rollback()
+        st.error(f"Error updating inventory: {e}")
+        return False
+    finally:
+        cursor.close()
+        conn.close()
+
+# Function to get tire status color
+def get_tire_color(condition):
+    if condition >= 70:
+        return 'green'
+    elif condition >= 30:
+        return 'orange'
+    else:
+        return 'red'
+
 # Get tipper details
 tipper_details = get_tipper_details()
 
@@ -230,7 +293,7 @@ st.markdown("---")
 # Sidebar for navigation
 menu = st.sidebar.selectbox(
     "Menu",
-    ["Tire Management", "Tire Dashboard", "Tipper Info"]
+    ["Tire Management", "Tire Dashboard", "Tipper Info", "Inventory Management"]
 )
 
 if menu == "Tipper Info":
@@ -271,6 +334,39 @@ if menu == "Tipper Info":
         use_container_width=True,
         hide_index=True
     )
+
+elif menu == "Inventory Management":
+    st.header("📦 Tire Inventory Management")
+    
+    # Get current inventory
+    new_tires, retread_tires, scrap_tires = get_tire_inventory()
+    
+    with st.form("inventory_form"):
+        st.subheader("Update Tire Inventory")
+        
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            new_tires_input = st.number_input("New Tires", min_value=0, value=new_tires)
+        with col2:
+            retread_tires_input = st.number_input("Retread Tires", min_value=0, value=retread_tires)
+        with col3:
+            scrap_tires_input = st.number_input("Scrap Tires", min_value=0, value=scrap_tires)
+        
+        if st.form_submit_button("Update Inventory"):
+            if update_tire_inventory(new_tires_input, retread_tires_input, scrap_tires_input):
+                st.success("Inventory updated successfully!")
+            else:
+                st.error("Failed to update inventory")
+    
+    # Display current inventory with cards
+    st.subheader("Current Inventory Status")
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        st.metric("New Tires", new_tires)
+    with col2:
+        st.metric("Retread Tires", retread_tires)
+    with col3:
+        st.metric("Scrap Tires", scrap_tires)
 
 elif menu == "Tire Management":
     st.header("🛠️ Tire Management")
@@ -317,6 +413,14 @@ elif menu == "Tire Management":
                 tire_number = f"Tire-{i+1}"
                 st.text_input("Tire Number", value=tire_number, key=f"num_{position}", disabled=True)
                 
+                # Tire status
+                tire_status = st.selectbox(
+                    "Tire Status",
+                    options=["new", "retread", "scrap"],
+                    index=0 if not existing_data else ["new", "retread", "scrap"].index(existing_data[7]),
+                    key=f"status_{position}"
+                )
+                
                 # Image upload
                 uploaded_file = st.file_uploader(
                     f"Upload {position} Tire Image",
@@ -325,10 +429,10 @@ elif menu == "Tire Management":
                 )
                 
                 # Display existing images if available
-                if existing_data and existing_data[7]:  # images are at index 7
+                if existing_data and existing_data[8]:  # images are at index 8
                     st.write("Existing Images:")
                     img_cols = st.columns(3)
-                    for idx, img_data in enumerate(existing_data[7]):
+                    for idx, img_data in enumerate(existing_data[8]):
                         try:
                             with img_cols[idx % 3]:
                                 image = Image.open(io.BytesIO(img_data))
@@ -385,12 +489,13 @@ elif menu == "Tire Management":
             date_installed = st.session_state.get(f"date_{position}")
             starting_kmr = st.session_state.get(f"start_{position}")
             current_kmr = st.session_state.get(f"current_{position}")
+            tire_status = st.session_state.get(f"status_{position}")
             
             # Save tire data to database
             if save_tire_data(
                 selected_tipper, tire_number, position, 
                 condition, date_installed, 
-                starting_kmr, current_kmr
+                starting_kmr, current_kmr, tire_status
             ):
                 success_count += 1
             
@@ -429,46 +534,69 @@ elif menu == "Tire Dashboard":
         # Convert to DataFrame for visualization
         tires_df = pd.DataFrame(tires, columns=[
             'Tire Number', 'Position', 'Condition (%)',
-            'Date Installed', 'Starting KMR', 'Current KMR', 'Last Checked', 'Images'
+            'Date Installed', 'Starting KMR', 'Current KMR', 
+            'Last Checked', 'Tire Status', 'Images'
         ])
         
         # Calculate KMs Run
         tires_df['KMs Run'] = tires_df['Current KMR'] - tires_df['Starting KMR']
         
         # Show summary metrics
-        col1, col2, col3 = st.columns(3)
+        col1, col2, col3, col4 = st.columns(4)
         with col1:
-            st.metric("Average Condition", f"{tires_df['Condition (%)'].mean():.1f}%")
+            avg_condition = tires_df['Condition (%)'].mean()
+            st.metric("Average Condition", f"{avg_condition:.1f}%")
         with col2:
-            st.metric("Total KMs Run", f"{tires_df['KMs Run'].sum():,.0f} km")
+            total_kms = tires_df['KMs Run'].sum()
+            st.metric("Total KMs Run", f"{total_kms:,.0f} km")
         with col3:
             worst_tire = tires_df.loc[tires_df['Condition (%)'].idxmin()]
             st.metric("Worst Condition", 
                      f"{worst_tire['Condition (%)']}% ({worst_tire['Position']})",
                      delta=f"{worst_tire['KMs Run']:,.0f} km")
+        with col4:
+            new_tires = (tires_df['Tire Status'] == 'new').sum()
+            st.metric("New Tires", new_tires)
         
-        # Detailed tire information
+        # Color coding for condition ranges
+        st.markdown("""
+        <style>
+        .green { background-color: #d4edda; color: #155724; }
+        .yellow { background-color: #fff3cd; color: #856404; }
+        .red { background-color: #f8d7da; color: #721c24; }
+        </style>
+        """, unsafe_allow_html=True)
+        
+        # Condition legend
+        st.markdown("""
+        **Condition Colors:**  
+        <span class="green">Good (70-100%)</span> | 
+        <span class="yellow">Fair (30-69%)</span> | 
+        <span class="red">Poor (0-29%)</span>
+        """, unsafe_allow_html=True)
+        
+        # Detailed tire information with color coding
         st.subheader("Detailed Tire Information")
         
-        # Create a more detailed table
-        detailed_df = tires_df[['Position', 'Tire Number', 'Starting KMR', 'Current KMR', 'KMs Run', 'Condition (%)', 'Date Installed']]
-        detailed_df = detailed_df.rename(columns={
-            'Starting KMR': 'Start KMR',
-            'Current KMR': 'Current KMR',
-            'KMs Run': 'KMs Run'
-        })
+        # Apply color coding based on condition
+        def color_tire_condition(val):
+            color = get_tire_color(val)
+            return f'background-color: {color}'
         
-        # Format the table
+        detailed_df = tires_df[['Position', 'Tire Number', 'Starting KMR', 'Current KMR', 
+                              'KMs Run', 'Condition (%)', 'Tire Status', 'Date Installed']]
+        
         st.dataframe(
             detailed_df.style
+            .applymap(color_tire_condition, subset=['Condition (%)'])
             .format({
-                'Start KMR': '{:,.0f}',
+                'Starting KMR': '{:,.0f}',
                 'Current KMR': '{:,.0f}',
                 'KMs Run': '{:,.0f}',
                 'Condition (%)': '{:.0f}%'
-            })
-            .apply(lambda x: ['background: #ffcccc' if x['Condition (%)'] < 30 else '' for i in x], axis=1),
-            use_container_width=True
+            }),
+            use_container_width=True,
+            height=(len(tires_df) * 35) + 35
         )
         
         # Visual layout of all tires
@@ -495,37 +623,41 @@ elif menu == "Tire Dashboard":
                     tire_data = tires_df[tires_df['Position'] == position]
                     if not tire_data.empty:
                         tire_data = tire_data.iloc[0]
+                        condition_color = get_tire_color(tire_data['Condition (%)'])
                         
-                        # Display tire info in a container
-                        with st.container(border=True):
-                            st.markdown(f"**{position}** ({tire_data['Tire Number']})")
+                        # Display tire info in a container with color-coded border
+                        with st.container():
+                            st.markdown(
+                                f"""<div style='border: 2px solid {condition_color}; border-radius: 5px; padding: 10px; margin-bottom: 10px;'>
+                                <h4 style='color: {condition_color};'>{position} ({tire_data['Tire Number']})</h4>
+                                <p><strong>Condition:</strong> <span style='color: {condition_color};'>{tire_data['Condition (%)']}%</span></p>
+                                <p><strong>Status:</strong> {tire_data['Tire Status'].capitalize()}</p>
+                                <p><strong>KMs Run:</strong> {tire_data['KMs Run']:,.0f} km</p>
+                                <p><strong>Installed:</strong> {tire_data['Date Installed']}</p>
+                                </div>""",
+                                unsafe_allow_html=True
+                            )
                             
                             # Display all images if available
                             if tire_data['Images'] and len(tire_data['Images']) > 0:
-                                st.write("Tire Images:")
-                                img_cols = st.columns(3)
-                                for idx, img_data in enumerate(tire_data['Images']):
-                                    try:
-                                        with img_cols[idx % 3]:
-                                            image = Image.open(io.BytesIO(img_data))
-                                            st.image(image, caption=f"Image {idx+1}", width=150)
-                                    except:
-                                        st.warning(f"Could not load image {idx+1}")
-                            
-                            # Display metrics
-                            col1, col2 = st.columns(2)
-                            with col1:
-                                st.metric("Start KMR", f"{tire_data['Starting KMR']:,.0f}")
-                            with col2:
-                                st.metric("Current KMR", f"{tire_data['Current KMR']:,.0f}")
-                            
-                            st.metric("KMs Run", f"{tire_data['KMs Run']:,.0f} km")
-                            st.metric("Condition", f"{tire_data['Condition (%)']}%")
-                            st.caption(f"Installed: {tire_data['Date Installed']}")
+                                with st.expander("View Tire Images"):
+                                    img_cols = st.columns(3)
+                                    for idx, img_data in enumerate(tire_data['Images']):
+                                        try:
+                                            with img_cols[idx % 3]:
+                                                image = Image.open(io.BytesIO(img_data))
+                                                st.image(image, caption=f"Image {idx+1}", width=150)
+                                        except:
+                                            st.warning(f"Could not load image {idx+1}")
                     else:
-                        with st.container(border=True):
-                            st.markdown(f"**{position}**")
-                            st.warning("No data available")
+                        with st.container():
+                            st.markdown(
+                                f"""<div style='border: 2px solid #cccccc; border-radius: 5px; padding: 10px; margin-bottom: 10px;'>
+                                <h4>{position}</h4>
+                                <p style='color: #666666;'>No data available</p>
+                                </div>""",
+                                unsafe_allow_html=True
+                            )
         
         # Condition trend chart
         st.subheader("Condition Overview")
@@ -535,4 +667,11 @@ elif menu == "Tire Dashboard":
         critical_tires = tires_df[tires_df['Condition (%)'] < 30]
         if not critical_tires.empty:
             st.warning("⚠️ The following tires need attention:")
-            st.dataframe(critical_tires[['Position', 'Tire Number', 'Condition (%)', 'KMs Run']])
+            st.dataframe(
+                critical_tires[['Position', 'Tire Number', 'Condition (%)', 'KMs Run', 'Tire Status']]
+                .style.applymap(lambda x: 'color: red', subset=['Condition (%)'])
+            )
+
+# Run the app
+if __name__ == "__main__":
+    st.set_page_config(layout="wide")
