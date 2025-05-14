@@ -420,10 +420,10 @@ elif menu == "Tire Dashboard":
     )
     
     # Updated inventory numbers as per request
-    new_tires = 14
-    retread_tires = 9
-    sent_for_retread = 9
-    scrapped_tires = 3
+    new_tires = 2
+    retread_tires = 4
+    sent_for_retread = 2
+    scrapped_tires = 93
     
     # Display inventory metrics
     st.subheader("Tire Inventory Status")
