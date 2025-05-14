@@ -419,11 +419,11 @@ elif menu == "Tire Dashboard":
         index=0
     )
     
-    # Updated inventory numbers as requested
-    new_tires = 2
-    retread_tires = 3
-    sent_for_retread = 4
-    scrapped_tires = 93
+    # Updated inventory numbers as per request
+    new_tires = 14
+    retread_tires = 9
+    sent_for_retread = 9
+    scrapped_tires = 3
     
     # Display inventory metrics
     st.subheader("Tire Inventory Status")
@@ -437,6 +437,7 @@ elif menu == "Tire Dashboard":
     with col4:
         st.metric("Scrapped Tires", scrapped_tires)
     
+    # Rest of the dashboard code remains the same...
     # Get tire data
     tires = get_tires_for_tipper(selected_tipper)
     
