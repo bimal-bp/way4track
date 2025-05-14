@@ -35,7 +35,7 @@ def initialize_database():
         current_kmr INTEGER NOT NULL,
         last_checked TIMESTAMP NOT NULL,
         UNIQUE(tipper_id, tire_number)
-    """)
+    )""")
     
     # Create tire_images table for storing images
     cursor.execute("""
@@ -47,14 +47,14 @@ def initialize_database():
         image_data BYTEA NOT NULL,
         upload_time TIMESTAMP NOT NULL,
         FOREIGN KEY (tipper_id, tire_number) REFERENCES tires (tipper_id, tire_number) ON DELETE CASCADE
-    """)
+    )""")
     
     # Create tippers table if not exists
     cursor.execute("""
     CREATE TABLE IF NOT EXISTS tippers (
         tipper_id VARCHAR(50) PRIMARY KEY,
         registration VARCHAR(100) NOT NULL
-    """)
+    )""")
     
     # Insert tipper details if table is empty
     cursor.execute("SELECT COUNT(*) FROM tippers")
@@ -437,7 +437,6 @@ elif menu == "Tire Dashboard":
     with col4:
         st.metric("Scrapped Tires", scrapped_tires)
     
-    # Rest of the dashboard code remains the same...
     # Get tire data
     tires = get_tires_for_tipper(selected_tipper)
     
