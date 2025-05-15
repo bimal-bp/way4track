@@ -419,22 +419,28 @@ elif menu == "Tire Dashboard":
         index=0
     )
     
-    # Updated inventory numbers as per request
-    new_tires = 2
-    retread_tires = 4
+    # Updated inventory numbers
+    new_tires_in_stock = 2
+    retread_tires_available = 4
+    new_tires_used = 16
+    retread_tires_used = 4
     sent_for_retread = 2
     scrapped_tires = 93
     
     # Display inventory metrics
     st.subheader("Tire Inventory Status")
-    col1, col2, col3, col4 = st.columns(4)
+    col1, col2, col3, col4, col5, col6 = st.columns(6)
     with col1:
-        st.metric("New Tires in Stock", new_tires)
+        st.metric("New Tires in Stock", new_tires_in_stock)
     with col2:
-        st.metric("Retread Tires Available", retread_tires)
+        st.metric("Retread Tires Available", retread_tires_available)
     with col3:
-        st.metric("Tires Sent for Retreading", sent_for_retread)
+        st.metric("New Tires Used", new_tires_used)
     with col4:
+        st.metric("Retread Tires Used", retread_tires_used)
+    with col5:
+        st.metric("Tires Sent for Retreading", sent_for_retread)
+    with col6:
         st.metric("Scrapped Tires", scrapped_tires)
     
     # Get tire data
