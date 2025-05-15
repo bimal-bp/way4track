@@ -176,7 +176,6 @@ def save_tire_data(tipper_id, tire_number, position, condition, date_installed, 
                 position = %s,
                 condition_percent = %s,
                 date_installed = %s,
-                starting_kmr = %s,
                 current_kmr = %s,
                 last_checked = %s
             WHERE tipper_id = %s AND tire_number = %s
@@ -184,7 +183,6 @@ def save_tire_data(tipper_id, tire_number, position, condition, date_installed, 
                 position,
                 condition,
                 date_installed,
-                starting_kmr,
                 current_kmr,
                 datetime.now(),
                 tipper_id,
@@ -363,7 +361,7 @@ elif menu == "Tire Management":
                     current_kmr = st.number_input(
                         "Current KMR",
                         min_value=starting_kmr,
-                        value=existing_data[5] if existing_data else starting_kmr,
+                        value=existing_data[5] if existing_data else (starting_kmr + 1000),  # Default to starting_kmr + 1000 if new
                         key=f"current_{position}"
                     )
                 
