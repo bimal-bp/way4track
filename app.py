@@ -10,10 +10,10 @@ import random
 # Database connection function
 def get_db_connection():
     return psycopg2.connect(
-        host="ep-cool-field-a4v58yfe-pooler.us-east-1.aws.neon.tech",
+        host="ep-wild-brook-a49r4hzd-pooler.us-east-1.aws.neon.tech",
         database="neondb",
         user="neondb_owner",
-        password="npg_3vkINAuWoQz6",
+        password="npg_F1vDOg4eumTR",
         sslmode="require"
     )
 
