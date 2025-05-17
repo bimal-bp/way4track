@@ -230,28 +230,63 @@ menu = st.sidebar.selectbox(
     ["Tire Management", "Tire Dashboard", "Tipper Info"]
 )
 
-# Define all tire positions with proper naming
+# Define all tire positions based on the replacement data
 positions = [
-    "Front Left", "Front Right",
-    "Middle Left 1", "Middle Right 1",
-    "Middle Left 2", "Middle Right 2",
-    "Rear Left 1", "Rear Right 1",
-    "Rear Left 2", "Rear Right 2"
+    "FRONT LEFT TYRE",
+    "FRONT RIGHT TYRE",
+    "Center Right In",
+    "Center Right Out",
+    "Center Left In",
+    "Center Left Out",
+    "Back Left In",
+    "Back Left Out",
+    "Back Right In",
+    "Back Right Out",
+    "BACK REAR OUTSIDE"
 ]
 
 # Mapping of positions to standardized tire numbers
 position_to_tire_number = {
-    "Front Left": "FL",
-    "Front Right": "FR",
-    "Middle Left 1": "ML1",
-    "Middle Right 1": "MR1",
-    "Middle Left 2": "ML2",
-    "Middle Right 2": "MR2",
-    "Rear Left 1": "RL1",
-    "Rear Right 1": "RR1",
-    "Rear Left 2": "RL2",
-    "Rear Right 2": "RR2"
+    "FRONT LEFT TYRE": "FL",
+    "FRONT RIGHT TYRE": "FR",
+    "Center Right In": "CRI",
+    "Center Right Out": "CRO",
+    "Center Left In": "CLI",
+    "Center Left Out": "CLO",
+    "Back Left In": "BLI",
+    "Back Left Out": "BLO",
+    "Back Right In": "BRI",
+    "Back Right Out": "BRO",
+    "BACK REAR OUTSIDE": "BRO"
 }
+
+# Standardize position names for display and database
+def standardize_position_name(position):
+    position = position.upper()
+    if "FRONT LEFT" in position or "Front Left" in position:
+        return "FRONT LEFT TYRE"
+    elif "FRONT RIGHT" in position or "Front Right" in position:
+        return "FRONT RIGHT TYRE"
+    elif "CENTER RIGHT IN" in position or "Centre Right In" in position:
+        return "Center Right In"
+    elif "CENTER RIGHT OUT" in position or "Centre Right Out" in position:
+        return "Center Right Out"
+    elif "CENTER LEFT IN" in position or "Centre Left In" in position:
+        return "Center Left In"
+    elif "CENTER LEFT OUT" in position or "Centre Left Out" in position:
+        return "Center Left Out"
+    elif "BACK LEFT IN" in position or "Back Left in" in position:
+        return "Back Left In"
+    elif "BACK LEFT OUT" in position or "Back Left out" in position:
+        return "Back Left Out"
+    elif "BACK RIGHT IN" in position or "Back Right in" in position:
+        return "Back Right In"
+    elif "BACK RIGHT OUT" in position or "Back Right out" in position:
+        return "Back Right Out"
+    elif "BACK REAR OUTSIDE" in position or "Back side tyres" in position:
+        return "BACK REAR OUTSIDE"
+    else:
+        return position
 
 if menu == "Tipper Info":
     st.header("ℹ️ Tipper Information")
@@ -322,7 +357,7 @@ elif menu == "Tire Management":
                 st.markdown(f"### {position}")
                 
                 # Find existing data for this position
-                existing_data = next((tire for tire in existing_tires if tire[1] == position), None)
+                existing_data = next((tire for tire in existing_tires if standardize_position_name(tire[1]) == position), None)
                 
                 # Tire number (standardized based on position)
                 tire_number = position_to_tire_number[position]
@@ -467,6 +502,9 @@ elif menu == "Tire Dashboard":
             'Date Installed', 'Starting KMR', 'Current KMR', 'Last Checked', 'Images'
         ])
         
+        # Standardize position names in the dataframe
+        tires_df['Position'] = tires_df['Position'].apply(standardize_position_name)
+        
         # Calculate KMs Run
         tires_df['KMs Run'] = tires_df['Current KMR'] - tires_df['Starting KMR']
         
@@ -505,13 +543,14 @@ elif menu == "Tire Dashboard":
         # Visual layout of all tires
         st.subheader("Tire Positions and Conditions")
         
-        # Define the tire layout (simulating a truck view)
+        # Define the tire layout based on actual vehicle configuration
         positions_order = [
-            ["Front Left", "Front Right"],
-            ["Middle Left 1", "Middle Right 1"],
-            ["Middle Left 2", "Middle Right 2"],
-            ["Rear Left 1", "Rear Right 1"],
-            ["Rear Left 2", "Rear Right 2"]
+            ["FRONT LEFT TYRE", "FRONT RIGHT TYRE"],
+            ["Center Left In", "Center Right In"],
+            ["Center Left Out", "Center Right Out"],
+            ["Back Left In", "Back Right In"],
+            ["Back Left Out", "Back Right Out"],
+            ["BACK REAR OUTSIDE"]
         ]
         
         # Create columns for the visual layout
