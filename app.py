@@ -230,6 +230,29 @@ menu = st.sidebar.selectbox(
     ["Tire Management", "Tire Dashboard", "Tipper Info"]
 )
 
+# Define all tire positions with proper naming
+positions = [
+    "Front Left", "Front Right",
+    "Middle Left 1", "Middle Right 1",
+    "Middle Left 2", "Middle Right 2",
+    "Rear Left 1", "Rear Right 1",
+    "Rear Left 2", "Rear Right 2"
+]
+
+# Mapping of positions to standardized tire numbers
+position_to_tire_number = {
+    "Front Left": "FL",
+    "Front Right": "FR",
+    "Middle Left 1": "ML1",
+    "Middle Right 1": "MR1",
+    "Middle Left 2": "ML2",
+    "Middle Right 2": "MR2",
+    "Rear Left 1": "RL1",
+    "Rear Right 1": "RR1",
+    "Rear Left 2": "RL2",
+    "Rear Right 2": "RR2"
+}
+
 if menu == "Tipper Info":
     st.header("ℹ️ Tipper Information")
     # Display all tippers in a clean table
@@ -280,15 +303,6 @@ elif menu == "Tire Management":
         index=0
     )
     
-    # Define all tire positions
-    positions = [
-        "Front Left", "Front Right",
-        "Middle Left 1", "Middle Right 1",
-        "Middle Left 2", "Middle Right 2",
-        "Rear Left 1", "Rear Right 1",
-        "Rear Left 2", "Rear Right 2"
-    ]
-    
     # Get existing tires for this tipper
     existing_tires = get_tires_for_tipper(selected_tipper)
     
@@ -310,8 +324,8 @@ elif menu == "Tire Management":
                 # Find existing data for this position
                 existing_data = next((tire for tire in existing_tires if tire[1] == position), None)
                 
-                # Tire number (fixed based on position)
-                tire_number = f"Tire-{i+1}"
+                # Tire number (standardized based on position)
+                tire_number = position_to_tire_number[position]
                 st.text_input("Tire Number", value=tire_number, key=f"num_{position}", disabled=True)
                 
                 # Image upload
@@ -361,7 +375,7 @@ elif menu == "Tire Management":
                     current_kmr = st.number_input(
                         "Current KMR",
                         min_value=starting_kmr,
-                        value=existing_data[5] if existing_data else (starting_kmr + 1000),  # Default to starting_kmr + 1000 if new
+                        value=existing_data[5] if existing_data else (starting_kmr + 1000),
                         key=f"current_{position}"
                     )
                 
@@ -375,7 +389,7 @@ elif menu == "Tire Management":
         success_count = 0
         
         for i, position in enumerate(positions):
-            tire_number = f"Tire-{i+1}"
+            tire_number = position_to_tire_number[position]
             
             # Get other form data
             condition = st.session_state.get(f"cond_{position}")
